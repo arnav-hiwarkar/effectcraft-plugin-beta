@@ -13,15 +13,24 @@ catalogue implementation have been removed. Old packages need a schema-2
   Render checks refresh GrantView and check contribution enablement, required
   permissions and the kill list, including during fuel slices.
 - Sessions use worker queues and document-thread request/reply. Each event has
-  one undo group, with rollback on failure and grant-generation checks at commit.
+  one undo group, with rollback on cancellation, invalid invocation, stopped plugin,
+  document replacement or revocation, and grant-generation checks at commit.
+  A denied, unknown or invalid operation returns its error to the plugin without
+  ending the event; the plugin can redraw its panel in that same event.
   Invocation permissions belong to the invoking contribution, including init.
 - The operation contract describes selection/document permissions and captured
   targets. UI revisions returned by operations are the committed revisions;
   floating windows retain their originating contribution's worker and authority.
 - Plugins > Manage Plugins opens the shared ManagerView in Settings. Host-drawn
   panels/windows, revision-tagged UI events and ProjectPrompt are wired.
+  Continue applies per-row skips; Open without them suppresses all referenced
+  plugins for that document, including effects (saved instances stay placeholders).
+  Suppression survives store reloads and clears for a new document. Download and
+  Enable open the shared setup flow; opening a project never grants consent.
 - `effectcraft-cli plugin …` uses shared `run_plugin`; `plugin contract`
-  prints the adapter reference. ext-cli defaults are disabled.
+  prints the adapter reference; `plugin project <project-file> [--json]` reads
+  JSON/XML projects and prints shared readiness diagnostics using every recorded
+  contribution and state version. ext-cli defaults are disabled.
 - Save writes project plugin references; open computes statuses without installing
   or enabling and offers the project prompt / CLI diagnostics.
 - Missing effect property groups and parameters survive save. Preview passes
@@ -36,18 +45,26 @@ catalogue implementation have been removed. Old packages need a schema-2
 - **B9-FEATURE-STATE:** effect property groups currently identify the contribution
   by `<plugin>/<effect>` and keep ordinary parameters. Add per-instance version,
   contract, state_version and opaque state, with downgrade placeholders. Project
-  package references alone cannot enforce state-version compatibility.
+  package readiness now checks recorded contribution state versions; per-instance
+  opaque state remains deferred.
 - **B4-DISPOSE:** deliver a bounded dispose event before stopping workers; current
   unload unregisters effects and queues Stop, without a guest dispose callback.
 - **B4-WORKER-ORDER:** wasm workers are per plugin/module. Separate modules in
   one package do not share a package-wide event ordering queue.
 - **B5-WINDOW-LIMIT:** surface commit silently skips excess floating windows;
   return a budget error before acknowledging a fifth window.
-- **B8-REFRESH:** the UI schedules a refresh at startup if due; add periodic
-  six-hour refresh scheduling for long-lived sessions.
+- Catalogue/kill-list refresh runs for the app lifetime every six hours, with
+  failure retries after 5 minutes, 30 minutes, then 2 hours. Published store
+  changes reload contributions on the next pump. An unreadable grant refresh
+  denies all rights and stops work until the store can be read again.
+- Native workers supervise idle helpers every 500 ms, withdrawing consent
+  promptly even with no queued events.
+- Tool contributions are unavailable: "Tools are not supported in EffectCraft yet";
+  the adapter reports that reason through shared compatibility/manager status.
 - **CONFORMANCE:** runtime, hostile modules, revocation races, GUI interaction,
   native-helper shutdown, undo/redo and project round trips need execution.
-  This task permits scoped cargo checks only; no tests or app runs were used.
+  Focused plugin and shared-core tests cover operation recovery, fail-closed
+  grants, project references and document suppression; no app runs were used.
 - Shared beta deferrals still apply: theme activation, native effects/pixel
   transport, temporal access, tiling, TUF and process leases.
 
@@ -56,21 +73,23 @@ format and the adapter declarations, without building or executing a generator.
 
 ## Scoped validation
 
-All eight permitted checks passed without warnings on Linux: `cargo check -p`
-`effectcraft-effects` (native and `--target wasm32-unknown-unknown`),
-`effectcraft-engine`, `effectcraft-plugins`, `effectcraft-host`,
-`effectcraft-ui-egui`, `effectcraft-cli`, and `effectcraft`.
-Checks ran one at a time. No builds, app runs, tests, clippy or workspace gates
-were run. The added point-default assertion has not been executed.
-The retired-identifier scan and `git diff --check` are clean.
+Scoped Linux checks: `cargo check -p effectcraft-effects` (native and
+`--target wasm32-unknown-unknown`), `effectcraft-engine`, `effectcraft-plugins`,
+`effectcraft-ui-egui`, `effectcraft-host`, and `effectcraft-cli`, one at a time.
+`cargo test -p effectcraft-plugins` passes all 11 tests, including the point-default
+assertion and the new regression tests. Shared hooks were checked with
+`cargo check -p craft-ext-core -p craft-ext-ui --tests`; `cargo test -p craft-ext-core`
+passes all 42 tests. No app runs, full builds, clippy or workspace gates were run.
 
 ### Transaction, UI and rendering safety
 
 Queued events belong to the dispatching session and document replacement epoch. The
 runtime drops events after Open/New or a surface revision change. On the document
-thread, every operation is authorized again with freshly read grants; contribution
+thread, every operation is authorized with freshly read grants (the worker skips
+argument-based permission rules via `authorizes_on_owner_thread`); contribution
 enablement and the captured release version/digest are checked before service and
-commit. A failed event discards its journal entries and edits. A successful event
+commit. An aborted event discards its journal entries and edits. A recoverable operation
+error leaves the event open, including the color-notes PermissionNeeded redraw. A successful event
 records exactly one undo step, even when its edits exceeded the history limit.
 
 Text inputs retain edits per surface/revision/widget and submit on Enter or focus

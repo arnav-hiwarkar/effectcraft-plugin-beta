@@ -20,7 +20,9 @@ struct State {
     manager: Option<Arc<Manager>>,
     manager_error: Option<String>,
     prompt: Option<ProjectPrompt>,
+    prompt_document: Option<Arc<()>>,
     refreshed: bool,
+    prompt_plugins: Vec<craft_ext_core::id::ExtensionId>,
 }
 
 thread_local! {
@@ -37,9 +39,10 @@ fn manager(st: &mut State) -> Option<Arc<Manager>> {
     st.manager.clone()
 }
 
-/// Every frame: serve plugin requests, deliver app events, refresh the kill list once, and pick
+/// Every frame: serve plugin requests, deliver app events, schedule recurring catalogue/kill-list refresh, and pick
 /// up a project-open prompt.
 pub fn frame(app: &mut EffectcraftApp, ctx: &egui::Context) {
+    ctx.request_repaint_after(std::time::Duration::from_secs(1));
     app.session.pump_plugins();
     let Some(rt) = effectcraft_plugins::runtime() else { return };
     STATE.with(|st| {
@@ -50,7 +53,14 @@ pub fn frame(app: &mut EffectcraftApp, ctx: &egui::Context) {
                 effectcraft_plugins::refresh_in_background();
             }
         }
-        if let Some(statuses) = rt.take_project_prompt() {
+        if st.prompt_document.as_ref().is_some_and(|d| !Arc::ptr_eq(d, &app.session.plugin_document_token())) {
+            st.prompt = None;
+            st.prompt_plugins.clear();
+            st.prompt_document = None;
+        }
+        if let Some(statuses) = rt.take_project_prompt(&app.session) {
+            st.prompt_document = Some(app.session.plugin_document_token());
+            st.prompt_plugins = statuses.iter().map(|(r, _)| r.id.clone()).collect();
             st.prompt = Some(ProjectPrompt::new(statuses));
         }
     });
@@ -67,9 +77,15 @@ pub fn show(app: &mut EffectcraftApp, ctx: &egui::Context) {
         if st.prompt.is_some()
             && let Some(m) = manager(&mut st)
             && let Some(p) = st.prompt.as_mut()
-            && p.show(ctx, &m).is_some()
+            && let Some(outcome) = p.show(ctx, &m)
         {
+            let ids = if outcome.open_without { st.prompt_plugins.clone() } else { outcome.skipped };
+            if let Some(rt) = effectcraft_plugins::runtime() {
+                rt.suppress_for_document(&mut app.session, ids);
+            }
             st.prompt = None;
+            st.prompt_document = None;
+            st.prompt_plugins.clear();
         }
     });
     let Some(rt) = app.session.plugins.clone() else { return };

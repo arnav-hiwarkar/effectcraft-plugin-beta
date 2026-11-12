@@ -83,18 +83,36 @@ mod native {
         Ok(Manager::new(craft_ext_store::Store::at(store_root()?), Some(app), crate::contract::provided(), crate::runtime::platform()))
     }
 
-    /// Refreshes the catalogue and the kill list in the background when the last refresh is older
-    /// than six hours (B8). The store change then reloads plugins on the next pump.
+    /// One lifetime scheduler; successful refreshes repeat after six hours, failures retry
+    /// after five minutes, thirty minutes, then two hours (capped).
     pub fn refresh_in_background() {
+        static STARTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+        if STARTED.swap(true, std::sync::atomic::Ordering::AcqRel) {
+            return;
+        }
         std::thread::spawn(|| {
-            let Ok(m) = manager() else { return };
-            let now = craft_ext_store::store::now();
-            let last = m.store.state().map(|s| s.last_refresh).unwrap_or(0);
-            if now.saturating_sub(last) < 6 * 3600 {
-                return;
-            }
-            if let Err(e) = m.refresh(now) {
-                log::info!("plugins: catalogue refresh failed: {e}");
+            let mut failures = 0usize;
+            let mut delay = manager()
+                .ok()
+                .and_then(|m| m.store.state().ok())
+                .map_or(0, |s| (6 * 3600u64).saturating_sub(craft_ext_store::store::now().saturating_sub(s.last_refresh)));
+            loop {
+                std::thread::sleep(std::time::Duration::from_secs(delay));
+                match manager().and_then(|m| m.refresh(craft_ext_store::store::now()).map_err(|e| e.to_string())) {
+                    Ok(()) => {
+                        failures = 0;
+                        delay = 6 * 3600;
+                    }
+                    Err(e) => {
+                        log::info!("plugins: catalogue refresh failed: {e}");
+                        delay = match failures {
+                            0 => 5 * 60,
+                            1 => 30 * 60,
+                            _ => 2 * 3600,
+                        };
+                        failures = failures.saturating_add(1);
+                    }
+                }
             }
         });
     }
@@ -106,6 +124,23 @@ mod native {
             return match write!(out, "{}", crate::contract::contract().to_markdown()) {
                 Ok(()) => 0,
                 Err(_) => 1,
+            };
+        }
+        if args.first().is_some_and(|a| a == "project") {
+            let result = (|| -> Result<(), String> {
+                let path = args.get(1).filter(|p| !p.starts_with("--")).ok_or("usage: effectcraft-cli plugin project <project-file> [--json]")?;
+                let text = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
+                let text = if effectcraft_engine::xml_project::is_xml(&text) { effectcraft_engine::xml_project::from_xml(&text)? } else { text };
+                let (project, _) = effectcraft_project::Project::from_json_repaired(&text).map_err(|e| e.to_string())?;
+                craft_ext_cli::print_project_status(&manager()?, &crate::runtime::project_refs(&project), args.iter().any(|a| a == "--json"), out)
+                    .map_err(|e| e.to_string())
+            })();
+            return match result {
+                Ok(()) => 0,
+                Err(e) => {
+                    let _ = writeln!(err, "{e}");
+                    1
+                }
             };
         }
         match manager() {

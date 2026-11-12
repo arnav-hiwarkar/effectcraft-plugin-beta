@@ -122,7 +122,7 @@ impl FilterEffect {
         let grants = self.grants.clone();
         let (plugin, version) = (self.plugin.clone(), self.version);
         let check = move || {
-            let view = grants.view();
+            let view = grants.view().map_err(PluginError::Stopped)?;
             let enabled = view.setup(&plugin).is_some_and(|s| s.enabled.contains(&self.contribution));
             if view.stopped(&plugin, version) || !enabled || !self.required.iter().all(|p| view.allowed(&plugin, p)) {
                 Err(PluginError::Stopped("this plugin effect has been turned off or its permissions revoked".into()))

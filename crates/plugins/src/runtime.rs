@@ -120,6 +120,9 @@ impl AppApi for Bridge {
     fn contract(&self) -> &AppContract {
         contract()
     }
+    fn authorizes_on_owner_thread(&self) -> bool {
+        true
+    }
     fn begin(&self, inv: &Invocation) -> Result<(), OpError> {
         let captured = self.ask(inv, Kind::Begin)?;
         let ids: Vec<u64> = captured["selection"].as_array().map(|a| a.iter().filter_map(Value::as_u64).collect()).unwrap_or_default();
@@ -254,8 +257,10 @@ pub struct Runtime {
     /// Results of events started by interactive commands (errors become toasts).
     results: Mutex<(Sender<Result<(), String>>, Receiver<Result<(), String>>)>,
     seen: Mutex<Seen>,
-    prompt: Mutex<Option<Vec<(PluginRef, Status)>>>,
+    prompt: Mutex<Option<(Arc<()>, Vec<(PluginRef, Status)>)>>,
     log: LogFn,
+    suppressed: Mutex<BTreeSet<ExtensionId>>,
+    suppressed_document: Mutex<Option<Arc<()>>>,
     next_rev: AtomicU64,
 }
 
@@ -282,9 +287,9 @@ impl Runtime {
         let view = GrantView::open(&root, app.clone()).map_err(|e| e.to_string())?;
         let (tx, rx) = mpsc::channel();
         Ok(Self {
-            app,
-            root,
-            grants: Arc::new(StoreGrants::new(view)),
+            app: app.clone(),
+            root: root.clone(),
+            grants: Arc::new(StoreGrants::new(view, root, app)),
             safe,
             interactive: AtomicBool::new(false),
             state: Mutex::new(State::default()),
@@ -295,6 +300,8 @@ impl Runtime {
             seen: Mutex::new(Seen::default()),
             prompt: Mutex::new(None),
             log: make_log(),
+            suppressed: Mutex::new(BTreeSet::new()),
+            suppressed_document: Mutex::new(None),
             next_rev: AtomicU64::new(1),
         })
     }
@@ -309,8 +316,36 @@ impl Runtime {
     }
 
     /// The project-open statuses waiting for the "This project uses N plugins" prompt.
-    pub fn take_project_prompt(&self) -> Option<Vec<(PluginRef, Status)>> {
-        lock(&self.prompt).take()
+    pub fn take_project_prompt(&self, s: &Session) -> Option<Vec<(PluginRef, Status)>> {
+        lock(&self.prompt).take().and_then(|(document, statuses)| Arc::ptr_eq(&document, &s.plugin_document_token()).then_some(statuses))
+    }
+
+    fn sync_document(&self, s: &mut Session) {
+        let new_document = {
+            let mut doc = lock(&self.suppressed_document);
+            if doc.as_ref().is_some_and(|d| !Arc::ptr_eq(d, &s.plugin_document_token())) {
+                *doc = None;
+                true
+            } else {
+                false
+            }
+        };
+        if new_document {
+            lock(&self.suppressed).clear();
+            self.unload("The document changed.");
+            self.load(s);
+        }
+    }
+
+    pub fn suppress_for_document(&self, s: &mut Session, ids: impl IntoIterator<Item = ExtensionId>) {
+        let ids: Vec<_> = ids.into_iter().collect();
+        if ids.is_empty() {
+            return;
+        }
+        *lock(&self.suppressed_document) = Some(s.plugin_document_token());
+        lock(&self.suppressed).extend(ids);
+        self.unload("This plugin was skipped for this document.");
+        self.load(s);
     }
 
     /// Loads every enabled contribution (effects register at once; sessions start their worker
@@ -321,7 +356,7 @@ impl Runtime {
         if self.safe {
             return;
         }
-        let enabled = match self.grants.view().enabled_contributions(&self.app) {
+        let enabled = match self.grants.view().and_then(|v| v.enabled_contributions(&self.app).map_err(|e| e.to_string())) {
             Ok(e) => e,
             Err(e) => {
                 log::warn!("plugins: {e}");
@@ -331,6 +366,9 @@ impl Runtime {
         let store_state = craft_ext_store::Store::at(&self.root).state().ok();
         let provided = provided();
         for (id, version, dir, manifest, on) in enabled {
+            if lock(&self.suppressed).contains(&id) {
+                continue;
+            }
             let rec = store_state.as_ref().and_then(|s| s.packages.get(&id));
             let sha256 = rec.and_then(|p| p.releases.get(&version)).map(|r| r.sha256.clone());
             let source = match rec.map(|p| &p.origin) {
@@ -339,6 +377,10 @@ impl Runtime {
             };
             let loaded = Loaded { id: id.clone(), version, name: manifest.name.clone(), sha256, source, manifest: manifest.clone(), enabled: on.clone() };
             for c in manifest.contributions_for(&self.app).filter(|c| on.contains(&c.id)) {
+                if let Some((_, why)) = provided.unsupported.iter().find(|(kind, _)| *kind == c.kind) {
+                    log::info!("plugin {id}: {} is unavailable here: {why}", c.label);
+                    continue;
+                }
                 if let Some(why) = c.contract.check(&provided) {
                     log::info!("plugin {id}: {} is unavailable here: {why}", c.label);
                     continue;
@@ -633,6 +675,9 @@ impl Runtime {
                 return Err(OpError::new(Code::Stale, "the plugin surface changed"));
             }
         }
+        if lock(&self.suppressed).contains(&r.plugin) {
+            return Err(OpError::denied("this plugin was skipped for this document"));
+        }
         let view = GrantView::open(&self.root, self.app.clone()).map_err(|e| OpError::denied(e.to_string()))?;
         let store = craft_ext_store::Store::at(&self.root).state().map_err(|e| OpError::denied(e.to_string()))?;
         let digest = store.packages.get(&r.plugin).and_then(|p| p.releases.get(&r.inv.version)).map(|p| &p.sha256);
@@ -645,7 +690,7 @@ impl Runtime {
         {
             return Err(OpError::denied("the invoking contribution, release or permissions changed"));
         }
-        Ok(StoreGrants::new(view))
+        Ok(StoreGrants::new(view, self.root.clone(), self.app.clone()))
     }
 
     fn transaction(&self, s: &mut Session, begin: Request, rx: &Receiver<Request>, deferred: &mut VecDeque<Request>) {
@@ -693,12 +738,20 @@ impl Runtime {
             match r.kind {
                 Kind::Call(op, args) => {
                     CAPTURED_SELECTION.with(|ids| *ids.borrow_mut() = selection.clone());
-                    let auth = valid.and_then(|grants| craft_ext_host::api::authorize(contract(), &grants, &begin.inv, &op, &args));
+                    let grants = match valid {
+                        Ok(grants) => grants,
+                        Err(e) => {
+                            CAPTURED_SELECTION.with(|ids| ids.borrow_mut().clear());
+                            let _ = r.reply.send(Err(e));
+                            s.finish_group(mark, &label, false);
+                            return;
+                        }
+                    };
+                    let auth = craft_ext_host::api::authorize(contract(), &grants, &begin.inv, &op, &args);
                     CAPTURED_SELECTION.with(|ids| ids.borrow_mut().clear());
                     if let Err(e) = auth {
                         let _ = r.reply.send(Err(e));
-                        s.finish_group(mark, &label, false);
-                        return;
+                        continue;
                     }
                     let out = match ops::run(s, &scope, &op, args, &own_panels) {
                         Ok(Outcome::Value(v)) => Ok(v),
@@ -722,6 +775,8 @@ impl Runtime {
                 }
                 Kind::Begin => {
                     let _ = r.reply.send(Err(OpError::new(Code::Stale, "an event is already open")));
+                    s.finish_group(mark, &label, false);
+                    return;
                 }
             }
         }
@@ -830,7 +885,17 @@ fn worker_main(
             return;
         }
     };
-    while let Ok(job) = rx.recv() {
+    loop {
+        if let Runner::Native(h) = &mut runner {
+            if !h.supervise() {
+                break;
+            }
+        }
+        let job = match rx.recv_timeout(Duration::from_millis(500)) {
+            Ok(job) => job,
+            Err(RecvTimeoutError::Timeout) => continue,
+            Err(RecvTimeoutError::Disconnected) => break,
+        };
         match job {
             Job::Event { dispatch, inv, event, done } => {
                 *lock(&context) = Some(dispatch);
@@ -853,11 +918,30 @@ fn worker_main(
     }
 }
 
+pub fn project_refs(project: &Project) -> Vec<PluginRef> {
+    project
+        .plugins
+        .iter()
+        .take(256)
+        .filter_map(|r| {
+            Some(PluginRef {
+                id: ExtensionId::new(&r.id).ok()?,
+                version: Version::parse(&r.version).ok()?,
+                sha256: r.sha256.clone().filter(|h| h.len() == 64 && h.chars().all(|c| c.is_ascii_hexdigit())),
+                source: if r.source == "catalogue" { Source::Catalogue } else { Source::Local },
+                name: r.name.chars().filter(|c| !c.is_control()).take(64).collect(),
+                contributions: r.contributions.keys().cloned().collect(),
+                state_versions: Some(r.contributions.clone()),
+            })
+        })
+        .collect()
+}
+
 fn status_text(s: &Status) -> String {
     match s {
         Status::Ready { version } => format!("ready ({version})"),
-        Status::NeedsEnable { version } => format!("installed ({version}) but turned off or missing permissions"),
-        Status::NeedsOtherVersion { installed, wanted } => format!("needs version {wanted} (installed: {installed})"),
+        Status::NeedsEnable { version, reason } => format!("installed ({version}): {reason}"),
+        Status::NeedsOtherVersion { installed, wanted, reason } => format!("needs version {wanted} (installed: {installed}): {reason}"),
         Status::Downloadable => "not installed (listed in the catalogue)".into(),
         Status::Unavailable { reason } => format!("unavailable: {reason}"),
     }
@@ -986,6 +1070,7 @@ impl PluginRuntime for Runtime {
     }
 
     fn run_command(&self, s: &mut Session, id: &str, _params: &Value) -> effectcraft_engine::Result<Value> {
+        self.sync_document(s);
         let (preset, session) = {
             let st = lock(&self.state);
             let preset = st.presets.iter().find(|p| p.command == id).cloned();
@@ -1005,6 +1090,7 @@ impl PluginRuntime for Runtime {
 
     fn pump(&self, s: &mut Session) {
         self.interactive.store(true, Ordering::Relaxed);
+        self.sync_document(s);
         // Enable, disable, grant, revoke, update and kill-list changes apply without a restart.
         let changes = self.grants.changes();
         let stale = lock(&self.state).store_changes != changes;
@@ -1097,22 +1183,13 @@ impl PluginRuntime for Runtime {
     }
 
     fn project_opened(&self, s: &mut Session) {
+        *lock(&self.prompt) = None;
+        lock(&self.suppressed).clear();
+        *lock(&self.suppressed_document) = None;
+        self.unload("The document changed.");
+        self.load(s);
         lock(&self.seen).opened = Some(s.path.clone().unwrap_or_default());
-        let refs: Vec<PluginRef> = s
-            .project
-            .plugins
-            .iter()
-            .take(256)
-            .filter_map(|r| {
-                Some(PluginRef {
-                    id: ExtensionId::new(&r.id).ok()?,
-                    version: Version::parse(&r.version).ok()?,
-                    sha256: r.sha256.clone().filter(|h| h.len() == 64 && h.chars().all(|c| c.is_ascii_hexdigit())),
-                    source: if r.source == "catalogue" { Source::Catalogue } else { Source::Local },
-                    name: r.name.chars().filter(|c| !c.is_control()).take(64).collect(),
-                })
-            })
-            .collect();
+        let refs = project_refs(&s.project);
         if refs.is_empty() {
             return;
         }
@@ -1138,7 +1215,7 @@ impl PluginRuntime for Runtime {
                 }
             }
         }
-        *lock(&self.prompt) = Some(statuses);
+        *lock(&self.prompt) = Some((s.plugin_document_token(), statuses));
     }
 
     fn describe(&self) -> Value {
@@ -1191,6 +1268,162 @@ mod regression_tests {
             reply: mpsc::channel().0,
             sent: Instant::now(),
         }
+    }
+
+    #[test]
+    fn document_suppression_survives_reload_and_clears_on_replacement() {
+        let dir = tempfile::tempdir().unwrap();
+        let rt = Runtime::new(dir.path().to_path_buf(), false).unwrap();
+        let mut s = Session::default();
+        let r = request(&rt, &s);
+        rt.suppress_for_document(&mut s, [r.plugin.clone()]);
+        rt.unload("reload");
+        rt.load(&mut s);
+        assert!(lock(&rt.suppressed).contains(&r.plugin));
+        assert!(rt.validate_request(&s, &r).err().unwrap().message.contains("skipped"));
+        let mut replacement = Session::default();
+        *lock(&rt.prompt) = Some((s.plugin_document_token(), Vec::new()));
+        assert!(rt.take_project_prompt(&replacement).is_none(), "old prompts cannot suppress a replacement document");
+        rt.pump(&mut replacement);
+        assert!(lock(&rt.suppressed).is_empty());
+    }
+
+    #[test]
+    fn denied_and_invalid_ops_allow_panel_redraw_in_the_same_transaction() {
+        let dir = tempfile::tempdir().unwrap();
+        let rt = Runtime::new(dir.path().to_path_buf(), false).unwrap();
+        let mut s = Session::default();
+        let mut begin = request(&rt, &s);
+        let manifest = Manifest::parse(
+            br#"
+schema = 2
+id = "io.github.tests.transaction"
+name = "Tests"
+version = "1.0.0"
+license = "MIT"
+source = "https://example.com/tests"
+summary = "Tests"
+apps = ["effectcraft"]
+[[contribution]]
+id = "command"
+kind = "command"
+contract = "effectcraft.session@1.0"
+module = "test.wasm"
+label = "Test"
+"#,
+        )
+        .unwrap();
+        let mut store = StoreState::default();
+        store.packages.insert(
+            begin.plugin.clone(),
+            PackageRec {
+                origin: Origin::Dev,
+                releases: BTreeMap::from([(begin.inv.version, ReleaseRec { origin: None, sha256: "a".repeat(64), tier: Tier::Dev, installed: 0 })]),
+            },
+        );
+        store.apps.insert(
+            rt.app.clone(),
+            BTreeMap::from([(
+                begin.plugin.clone(),
+                AppSetup { active: Some(begin.inv.version), enabled: BTreeSet::from(["command".into()]), ..Default::default() },
+            )]),
+        );
+        std::fs::write(dir.path().join(STATE_FILE), serde_json::to_vec(&store).unwrap()).unwrap();
+        // The request helper probed the empty store; let its metadata throttle expire.
+        std::thread::sleep(Duration::from_millis(260));
+        let key = format!("{}/notes", begin.plugin);
+        let declared: Arc<[Permission]> = vec![Permission::DocumentEdit(craft_ext_core::permission::DocScope::Document)].into();
+        begin.inv.declared = declared.clone();
+        begin.declared = declared.clone();
+        {
+            let mut st = lock(&rt.state);
+            st.loaded.push(Loaded {
+                id: begin.plugin.clone(),
+                version: begin.inv.version,
+                name: "Tests".into(),
+                sha256: Some("a".repeat(64)),
+                source: Source::Local,
+                manifest,
+                enabled: BTreeSet::from(["command".into()]),
+            });
+            st.sessions.push(SessionContribution {
+                plugin: begin.plugin.clone(),
+                version: begin.inv.version,
+                plugin_name: "Tests".into(),
+                contribution: "notes".into(),
+                label: "Notes".into(),
+                kind: ContributionKind::Panel,
+                category: None,
+                worker: "worker".into(),
+                declared: declared.clone(),
+            });
+            st.surfaces.insert(
+                key.clone(),
+                Surface {
+                    title: "Notes".into(),
+                    tree: None,
+                    rev: 0,
+                    window: false,
+                    open: true,
+                    worker: "worker".into(),
+                    contribution: "notes".into(),
+                    declared,
+                    plugin: begin.plugin.clone(),
+                    version: begin.inv.version,
+                    plugin_name: "Tests".into(),
+                },
+            );
+        }
+        let (reply, begun) = mpsc::channel();
+        begin.reply = reply;
+        let (tx, rx) = mpsc::channel();
+        let inv = begin.inv.clone();
+        let dispatch = begin.dispatch.clone();
+        let plugin = begin.plugin.clone();
+        let guest = std::thread::spawn(move || {
+            begun.recv().unwrap().unwrap();
+            let call = |kind| {
+                let (reply, result) = mpsc::channel();
+                tx.send(Request {
+                    key: inv_key(&inv),
+                    inv: inv.clone(),
+                    dispatch: dispatch.clone(),
+                    plugin: plugin.clone(),
+                    label: inv.label.clone(),
+                    contribution: inv.contribution.clone(),
+                    declared: inv.declared.clone(),
+                    kind,
+                    reply,
+                    sent: Instant::now(),
+                })
+                .unwrap();
+                result.recv_timeout(OP_TIMEOUT).unwrap()
+            };
+            assert_eq!(call(Kind::Call("marker.add".into(), json!({"label":"Note"}))).unwrap_err().code, Code::Denied);
+            assert!(call(Kind::Call("unknown.op".into(), json!({}))).is_err());
+            assert!(call(Kind::Call("ui.panel.set".into(), json!({"panel":"notes", "tree":{"type":"label","text":"Permission needed"}}))).is_ok());
+            call(Kind::Finish(true)).unwrap();
+        });
+        rt.transaction(&mut s, begin, &rx, &mut VecDeque::new());
+        guest.join().unwrap();
+        let st = lock(&rt.state);
+        assert_eq!(st.surfaces[&key].tree.as_ref().unwrap()["text"], "Permission needed");
+    }
+
+    #[test]
+    fn project_refs_include_required_contributions_and_state_versions() {
+        let mut p = Project::default();
+        p.plugins.push(effectcraft_project::PluginRef {
+            id: "io.github.tests.project".into(),
+            version: "1.0.0".into(),
+            sha256: None,
+            source: "local".into(),
+            name: "Test".into(),
+            contributions: BTreeMap::from([("required-effect".into(), 3)]),
+        });
+        let refs = project_refs(&p);
+        assert_eq!(refs[0].contributions, vec!["required-effect"]);
+        assert_eq!(refs[0].state_versions.as_ref().unwrap()["required-effect"], 3);
     }
 
     #[test]

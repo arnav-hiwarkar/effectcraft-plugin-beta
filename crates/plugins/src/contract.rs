@@ -21,7 +21,7 @@ pub fn provided() -> Provided {
         ("resource.preset", 1, 0),
         ("resource.lut", 1, 0),
         ("craft-theme", 1, 0),
-    ])
+    ]).without(craft_ext_core::manifest::ContributionKind::Tool, "Tools are not supported in EffectCraft yet")
 }
 
 thread_local! {
@@ -192,7 +192,7 @@ fn build() -> AppContract {
             SlotSpec { kind: "lut", summary: "Listed by `plugin.resources` (absolute `.cube` paths for Apply Color LUT's file parameter)." },
             SlotSpec { kind: "theme", summary: "Stored and listed; applied once craft-theme lands (deferred)." },
         ],
-        notes: "Pixels: premultiplied RGBA f32 in the project's working space (`color` is `linear-srgb` when Linearize Working Space is on, else `srgb`); values may exceed 1 in 32 bpc projects. \
+        notes: "Tools are not supported in EffectCraft yet. Pixels: premultiplied RGBA f32 in the project's working space (`color` is `linear-srgb` when Linearize Working Space is on, else `srgb`); values may exceed 1 in 32 bpc projects. \
 `time` is layer time in seconds. `scale` is buffer pixels per layer pixel (previews at reduced resolution have scale < 1 and `quality: \"draft\"`). \
 `origin` is the buffer's top-left inside the layer's full frame and `full` the layer's size, both in buffer pixels. \
 Point parameters: defaults are fractions of the layer size ([0.5, 0.5] = centre); values reach the filter in buffer pixels. Angle parameters are degrees. Select parameters are 0-based indices. \
