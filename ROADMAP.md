@@ -55,7 +55,7 @@ Linux/Windows reliability (30–50 h) and depth in animation, masks, effects and
 | Performance | 35% | 50–100 | [gaps.md](docs/gaps.md#g5-performance-at-real-world-scale) |
 | Stability | 45% | 40–80 | [gaps.md](docs/gaps.md#g3-stability-and-a-green-main) |
 | Platforms | 65% | 30–60 | [gaps.md](docs/gaps.md#g2-real-user-reliability-on-every-platform) |
-| Ecosystem and plug-ins | 20% | 40–80 | [plugins.md](docs/plugins.md), [scripting-parity.md](docs/scripting-parity.md) |
+| Ecosystem and plug-ins | 20% | 40–80 | [plugins.md](docs/plugins.md) (Craft plugins), [scripting-parity.md](docs/scripting-parity.md) |
 | AI features | 35% | 40–80 | [gaps.md](docs/gaps.md) |
 | Agent control (beyond After Effects) | ahead | — | [agents.md](docs/agents.md) |
 

@@ -80,6 +80,11 @@ pub(crate) fn open(s: &mut Session, p: &Value) -> Result<Value> {
     if s.check_footage_on_open {
         crate::footage_check::start(s, None, false)?;
     }
+    // Plugins: statuses and the "This project uses N plugins" prompt (nothing is downloaded or
+    // enabled here).
+    if let Some(rt) = s.plugins.clone() {
+        rt.project_opened(s);
+    }
     Ok(json!({"path": path, "savedBy": saved_by, "repaired": repaired}))
 }
 
@@ -93,6 +98,13 @@ pub(crate) fn file_text(s: &Session, path: &str) -> Result<String> {
 }
 
 fn save_to(s: &mut Session, path: &str) -> Result<Value> {
+    // The plugins this project uses (missing ones keep their entries).
+    if let Some(rt) = s.plugins.clone() {
+        let refs = rt.project_plugins(&s.project);
+        if refs != s.project.plugins {
+            std::sync::Arc::make_mut(&mut s.project).plugins = refs;
+        }
+    }
     let json = file_text(s, path)?;
     s.services.write_file(path, json.as_bytes()).map_err(|e| EngineError::Other(format!("cannot write {path}: {e}")))?;
     s.path = Some(path.to_string());

@@ -352,6 +352,12 @@ fn follow(files: &Files, stale: bool) {
 
 /// Changes each time a file a cached load read is found changed on disk (by a load itself or
 /// [`check_lut_files`]): frames made before then may show the old contents.
+/// Marks frames made before now as possibly stale (a plugin effect was registered, replaced or
+/// turned off): the same signal as a changed LUT file.
+pub(crate) fn bump_generation() {
+    GENERATION.fetch_add(1, Ordering::AcqRel);
+}
+
 pub fn lut_generation() -> u64 {
     GENERATION.load(Ordering::Acquire)
 }

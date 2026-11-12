@@ -46,10 +46,10 @@ fn builtin_menu_labels_do_not_reintroduce_vendor_feature_names() {
 fn top_level_order_matches_after_effects() {
     let mac: Vec<String> =
         parse(TREE, true).unwrap().iter().filter_map(|n| if let MenuNode::Submenu { label, .. } = n { Some(label.clone()) } else { None }).collect();
-    assert_eq!(mac, ["EffectCraft", "File", "Edit", "Composition", "Layer", "Effect", "Animation", "View", "Window", "Help"]);
+    assert_eq!(mac, ["EffectCraft", "File", "Edit", "Composition", "Layer", "Effect", "Animation", "View", "Window", "Plugins", "Help"]);
     let other: Vec<String> =
         parse(TREE, false).unwrap().iter().filter_map(|n| if let MenuNode::Submenu { label, .. } = n { Some(label.clone()) } else { None }).collect();
-    assert_eq!(other, ["File", "Edit", "Composition", "Layer", "Effect", "Animation", "View", "Window", "Help"]);
+    assert_eq!(other, ["File", "Edit", "Composition", "Layer", "Effect", "Animation", "View", "Window", "Plugins", "Help"]);
     // The live bar is one of the two.
     assert!(top_level().len() == mac.len() || top_level().len() == other.len());
 }

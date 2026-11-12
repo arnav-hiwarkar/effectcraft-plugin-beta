@@ -158,6 +158,16 @@ pub fn dynamic(s: &Session, name: &str, cx: &DynCtx) -> (Vec<MenuEntry>, Option<
             None,
         ),
         // File ▸ Scripts: installed and sample scripts; the Window menu's ScriptUI panels.
+        // Plugin commands and panels, by plugin (`<plugin name>/<label>`; see [`dynamic_nodes`]).
+        "plugins" => {
+            let Some(rt) = s.plugins.clone() else { return (vec![], Some("Plugins are not available here")) };
+            let mut v: Vec<MenuEntry> = rt.commands().into_iter().map(|c| dyn_entry(format!("{}/{}", c.plugin.replace('/', "∕"), c.label.replace('/', "∕")), &c.id, json!({}))).collect();
+            v.extend(rt.surfaces().into_iter().filter(|p| !p.window).map(|p| {
+                let (title, plugin) = p.title.split_once(" — ").map_or((p.title.as_str(), ""), |(t, n)| (t, n));
+                dyn_entry(format!("{}/{}", plugin.replace('/', "∕"), title.replace('/', "∕")), "plugin.showPanel", json!({"surface": p.key}))
+            }));
+            (v, Some("No Plugins Turned On"))
+        }
         "scripts" | "scriptPanels" => {
             let panels = name == "scriptPanels";
             let cmd = if panels { "window.scriptPanel" } else { "file.runScript" };
@@ -179,7 +189,7 @@ pub fn dynamic(s: &Session, name: &str, cx: &DynCtx) -> (Vec<MenuEntry>, Option<
 /// Animate.jsx`), placed where the folder sorts among the other entries.
 pub fn dynamic_nodes(s: &Session, name: &str, cx: &DynCtx) -> (Vec<MenuNode>, Option<&'static str>) {
     let (entries, empty) = dynamic(s, name, cx);
-    let scripts = matches!(name, "scripts" | "scriptPanels");
+    let scripts = matches!(name, "scripts" | "scriptPanels" | "plugins");
     let mut out: Vec<MenuNode> = vec![];
     for mut e in entries {
         let Some((folder, file)) = e.label.split_once('/').filter(|_| scripts).map(|(d, f)| (d.to_string(), f.to_string())) else {
@@ -1034,12 +1044,6 @@ Effect
   Remove All | effect.removeAll
   ---
   Manage Effects... | effect.manage
-  Load Effect Plug-in... | effect.plugins.load
-  Install Effect Plug-in... | effect.plugins.install
-  Install Effect Plug-in Bundle (Folder)... | effect.plugins.install {"bundle": true}
-  Load Plug-ins Through Helper... | effect.helpers.load
-  Scan for Effect Helpers | effect.helpers.scan
-  Plug-in Library... | prefs.open {"page":"library"}
   ---
   @effects
 Animation
@@ -1300,6 +1304,10 @@ Window
   Create Nulls From Paths | window.panel {"panel":"createNullsFromPaths"}
   VR Comp Editor | window.panel {"panel":"vrCompEditor"}
   @dynamic:scriptPanels
+Plugins
+  Manage Plugins... | prefs.open {"page":"plugins"}
+  ---
+  @dynamic:plugins
 Help
   EffectCraft Help... | help.docs {"page":"help"} | F1
   Scripting Help... | help.docs {"page":"scripting"}

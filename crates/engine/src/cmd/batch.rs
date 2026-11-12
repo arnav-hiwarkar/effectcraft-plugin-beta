@@ -108,19 +108,19 @@ fn batch(s: &mut Session, p: &Value) -> Result<Value> {
                     s.bump();
                     "; the batch was rolled back (nothing changed)".to_string()
                 } else {
-                    fold(s, &project, &label);
+                    fold_since(s, &project, &label);
                     format!("; steps 1–{i} were applied")
                 };
                 return Err(EngineError::Other(format!("step {} ({id}): {e}{note}", i + 1)));
             }
         }
     }
-    fold(s, &project, &label);
+    fold_since(s, &project, &label);
     Ok(json!({"steps": results.len(), "results": results}))
 }
 
 /// Fold the undo steps recorded since the project was `snap` into one step called `label`.
-fn fold(s: &mut Session, snap: &Arc<effectcraft_project::Project>, label: &str) {
+pub(crate) fn fold_since(s: &mut Session, snap: &Arc<effectcraft_project::Project>, label: &str) {
     let h = &mut s.history;
     let Some(start) = h.undo.iter().rposition(|(_, p)| Arc::ptr_eq(p, snap)) else { return };
     let first = h.undo[start].1.clone();

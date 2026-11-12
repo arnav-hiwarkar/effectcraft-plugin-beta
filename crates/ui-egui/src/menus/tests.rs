@@ -701,36 +701,6 @@ fn bundle_result_errors_show_compactly_in_the_status_line() {
     assert_eq!(app.ui.status, "a.wasm: already installed; b.wasm: does not load; c.wasm: cannot read it; +1 more");
 }
 
-/// Effect ▸ Install Effect Plug-in… picks its dialog by params: a bundle asks for a folder,
-/// a plain install asks for a `.wasm`, and with both given inline nothing asks at all.
-#[test]
-fn effect_plugin_install_dialog_router() {
-    use std::sync::{Arc, Mutex};
-    let mut app = EffectcraftApp::new(effectcraft_engine::Session::default());
-    let ctx = egui::Context::default();
-    let pending = Arc::new(Mutex::new(Vec::new()));
-    let queue = pending.clone();
-    app.hooks.file_dialog_async = Some(Box::new(move |dialog, _done| queue.lock().unwrap().push(dialog)));
-    // The bundle menu entry: a folder picker.
-    assert_eq!(invoke(&mut app, &ctx, "effect.plugins.install", json!({"bundle": true})).unwrap(), json!({"dialog": "effect.plugins.install"}));
-    assert_eq!(pending.lock().unwrap().pop().unwrap(), crate::FileDialog::Folder, "the bundle asks for a folder");
-    // The plain command: a `.wasm` file picker.
-    assert_eq!(invoke(&mut app, &ctx, "effect.plugins.install", json!({})).unwrap(), json!({"dialog": "effect.plugins.install"}));
-    let crate::FileDialog::Open { exts, many } = pending.lock().unwrap().pop().unwrap() else { panic!("not an open dialog") };
-    assert_eq!(exts, vec!["wasm".to_string()], "{exts:?}");
-    assert!(!many);
-    // `path` given inline overrides the bundle ask: the command runs directly, opening no dialog
-    // (this session has no plug-in loader, so it errors — but nothing was asked).
-    let r = invoke(&mut app, &ctx, "effect.plugins.install", json!({"bundle": true, "path": "x.wasm"}));
-    assert!(r.is_err(), "{r:?}");
-    assert!(pending.lock().unwrap().is_empty(), "no dialog for an inline path");
-    // A supplied `folder` is a bundle source too: asking for a file would let the install take
-    // the picked file and ignore the folder, so nothing is asked.
-    let r = invoke(&mut app, &ctx, "effect.plugins.install", json!({"folder": "some/where"}));
-    assert!(r.is_err(), "{r:?}");
-    assert!(pending.lock().unwrap().is_empty(), "no dialog for an inline folder");
-}
-
 /// File ▸ Import ▸ File… in the non-blocking dialog (macOS, Linux) offers After Effects projects
 /// next to footage, and a picked one imports as File ▸ Import ▸ Adobe After Effects Project… does: its
 /// folder, its composition open.

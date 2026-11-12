@@ -33,6 +33,8 @@
 //! effectcraft-cli script FILE.jsx [F.ecproj] | --eval CODE    run an After Effects-style script
 //! effectcraft-cli replay SCRIPT.jsonl [--keep-going]        replay a repro script (docs/agents.md)
 //! effectcraft-cli mcp [--autosave | --bridge PORT]            MCP server on stdio
+//! effectcraft-cli plugin <search|info|install|setup|enable|grant|list|…> [--json]   Craft plugins (`plugin --help`)
+//! effectcraft-cli plugin contract                            the plugin contract reference (Markdown)
 //!
 //! Project:  --project F.ecproj (or a positional *.ecproj) | --demo | --empty   (default: demo; mcp: empty)
 //! Saving:   --save (back to --project) | --save-as F.ecproj
@@ -98,7 +100,8 @@ fn stdout_broken() -> bool {
     STDOUT_FAILED.get().is_some_and(|k| *k != std::io::ErrorKind::BrokenPipe)
 }
 
-const USAGE: &str = "usage: effectcraft-cli <info|commands|exec|run|props|get|set|render-frame|render|script|replay|mcp> [args] [--json]
+const USAGE: &str = "usage: effectcraft-cli <info|commands|exec|run|props|get|set|render-frame|render|script|replay|mcp|plugin> [args] [--json]
+  plugin <subcommand> [--json]             manage Craft plugins (plugin --help); plugin contract: the reference for plugin makers
   info                                     project + engine summary
   commands [--filter TEXT] [--enabled]     list engine commands
   exec <command-id> [--params JSON]        run one engine command (exec --list: list them, as `commands`)
@@ -317,6 +320,11 @@ fn main() {
         Ok(raw) => raw,
         Err(e) => fail_usage(&e),
     };
+    // `plugin …` has its own arguments (the shared Craft plugin command library).
+    if raw.first().is_some_and(|a| a == "plugin") {
+        let code = effectcraft_host::plugin_cli(raw.get(1..).unwrap_or_default(), &mut std::io::stdout(), &mut std::io::stderr());
+        std::process::exit(code);
+    }
     if matches!(raw.first().map(String::as_str), Some("--version" | "-V" | "version")) {
         say!("effectcraft-cli {}", env!("CARGO_PKG_VERSION"));
         return;

@@ -46,10 +46,6 @@ const REFUSED: &[&str] = &[
     "file.installScript",
     "file.installScriptUIPanel",
     "file.uninstallScript",
-    // Copies a plug-in (and a bundle's ScriptUI panels) from a user-chosen path into the folders
-    // the app loads code from: an agent must not plant code that runs on every start, and its
-    // sources are checked no better than `file.installScript`'s.
-    "effect.plugins.install",
     // A ScriptUI panel's script runs when the panel opens, when an event reaches one of its
     // controls, and when one of its `app.scheduleTask` tasks comes due.
     "window.scriptPanel",
@@ -60,26 +56,23 @@ const REFUSED: &[&str] = &[
     "scriptui.mouse",
     "scriptui.close",
     "file.executeFile",
-    "effect.helpers.scan",
-    "effect.helpers.load",
     "file.revealInFinder",
     "layer.openSource",
     "help.revealLogFile",
     // Hands the footage file to the platform's default application.
     "edit.editOriginal",
     "file.autoSave",
-    // The Plug-in Library downloads code, installs it to load at start-up and reads `file://` catalogs.
-    "library.refresh",
-    "library.install",
-    "library.update",
-    "library.uninstall",
-    "library.loadInstalled",
-    "library.preview",
     // Watch Folder renders the projects it finds to the outputs they name and writes status
     // files into the watched folder: neither is a path the agent gives, so neither is checked.
     "file.watchFolder",
     "file.watchFolder.poll",
 ];
+
+/// Plugin commands and widget events run plugin code, and native plugins have full access to the
+/// computer: a confined agent may only list plugins and their resources.
+fn runs_plugin_code(id: &str) -> bool {
+    id.starts_with("plugin.") && !matches!(id, "plugin.list" | "plugin.resources" | "plugin.missing" | "plugin.showPanel")
+}
 
 /// Most numbered folders `check_render_folder` inspects for one output; more are refused.
 const MAX_NUMBERED_FOLDERS: usize = 4096;
@@ -103,7 +96,6 @@ const READS: &[(&str, &[&str])] = &[
     ("essential.importTemplate", &["path"]),
     ("view.importGuides", &["path"]),
     ("shortcuts.import", &["path"]),
-    ("effect.plugins.load", &["path", "folder"]),
     ("mediaBrowser.go", &["path"]),
     ("mediaBrowser.addFavorite", &["path"]),
     // #1243: these read the files they are given but were missing, so a relative path went
@@ -286,7 +278,7 @@ impl Confinement {
     /// Check engine command `id` with `params` before it runs. Returns what must still be looked
     /// up and passed to [`Confinement::check_lookup`] for commands that write implicitly.
     pub fn check_command(&self, id: &str, params: &Value) -> Result<Vec<Lookup>> {
-        if REFUSED.contains(&id) || effectcraft_engine::commands::scripts::RUNS_SCRIPTS.contains(&id) {
+        if REFUSED.contains(&id) || effectcraft_engine::commands::scripts::RUNS_SCRIPTS.contains(&id) || runs_plugin_code(id) {
             return Err(Error::BadArgs(format!("`{id}` is not available while file access is confined (--automation-read-root/--automation-write-root)")));
         }
         // Scripts can't grant themselves the access the user withheld
@@ -843,24 +835,14 @@ mod tests {
         let _ = std::fs::remove_dir_all(&base);
     }
 
-    /// Installing a plug-in plants code the app runs at every start, so confinement refuses it
-    /// even when the file is inside a read root (like `file.installScript`).
+    /// Plugin commands run plugin code (native plugins have full access): refused while confined;
+    /// listing is allowed.
     #[test]
-    fn installing_plugins_is_refused_while_confined() {
-        let base = std::env::temp_dir().join(format!("ec-confine-plugins-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&base);
-        let read = base.join("in");
-        std::fs::create_dir_all(&read).unwrap();
-        let c = Confinement::new(std::slice::from_ref(&read), &[]).unwrap();
-        let inside = read.join("a.wasm").to_string_lossy().into_owned();
-        for params in [
-            serde_json::json!({"path": inside}),
-            serde_json::json!({"folder": read.to_string_lossy()}),
-            serde_json::json!({"path": "a.wasm"}),
-            serde_json::json!({"bundle": true}),
-        ] {
-            assert!(c.check_command("effect.plugins.install", &params).is_err(), "{params}");
-        }
+    fn plugin_code_is_refused_while_confined() {
+        let c = Confinement::new(&[], &[]).unwrap();
+        assert!(c.check_command("plugin.io.github.a.b.cmd", &serde_json::json!({})).is_err());
+        assert!(c.check_command("plugin.uiEvent", &serde_json::json!({})).is_err());
+        assert!(c.check_command("plugin.list", &serde_json::json!({})).is_ok());
     }
 
     #[test]

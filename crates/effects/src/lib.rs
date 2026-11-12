@@ -26,6 +26,7 @@ pub mod crypto_select;
 #[cfg(test)]
 mod display_names;
 mod distort;
+pub mod external;
 mod distort2;
 mod distort3;
 pub mod distort4;
@@ -53,7 +54,6 @@ pub mod ocio_config;
 pub mod paint;
 mod perspective;
 mod perspective2;
-pub mod plugin;
 pub mod psim;
 pub mod puppet;
 pub mod roto;
@@ -756,15 +756,15 @@ pub fn registry() -> &'static [EffectSpec] {
     })
 }
 
-/// A built-in effect or a registered plug-in by id.
+/// A built-in effect or an active plugin effect ([`external`]) by id.
 pub fn find(id: &str) -> Option<&'static EffectSpec> {
-    registry().iter().find(|s| s.id == id).or_else(|| plugin::plugins().into_iter().find(|s| s.id == id))
+    registry().iter().find(|s| s.id == id).or_else(|| external::find(id))
 }
 
-/// Every effect: the built-ins ([`registry`]) and the registered plug-ins
-/// ([`plugin::register_plugin`]), sorted by category then name.
+/// Every effect: the built-ins ([`registry`]) and the active plugin effects
+/// ([`external::register`]), sorted by category then name.
 pub fn all() -> Vec<&'static EffectSpec> {
-    let plugins = plugin::plugins();
+    let plugins = external::active();
     let mut v: Vec<&'static EffectSpec> = registry().iter().collect();
     if !plugins.is_empty() {
         v.extend(plugins);
@@ -773,10 +773,10 @@ pub fn all() -> Vec<&'static EffectSpec> {
     v
 }
 
-/// Effects & Presets categories: [`CATEGORIES`] then the plug-ins' own, alphabetically.
+/// Effects & Presets categories: [`CATEGORIES`] then the plugin effects' own, alphabetically.
 pub fn categories() -> Vec<&'static str> {
     let mut v: Vec<&'static str> = CATEGORIES.to_vec();
-    let mut extra: Vec<&'static str> = plugin::plugins().iter().map(|s| s.category).filter(|c| !CATEGORIES.contains(c)).collect();
+    let mut extra: Vec<&'static str> = external::active().iter().map(|s| s.category).filter(|c| !CATEGORIES.contains(c)).collect();
     extra.sort_unstable();
     extra.dedup();
     v.extend(extra);
@@ -1518,7 +1518,8 @@ pub const TIME_DEPENDENT: &[&str] = &[
 pub fn is_time_dependent(id: &str) -> bool {
     // Simulations replay from layer time 0, so every frame differs even when the defaults
     // happen to look static at the test's two sample times.
-    id.starts_with("ec.sim.") || TIME_DEPENDENT.contains(&id) || (!id.starts_with("ec.") && plugin::reads_other_times(id))
+    // Plugin effects get the layer time in their context and may use it.
+    id.starts_with("ec.sim.") || TIME_DEPENDENT.contains(&id) || external::valid_id(id)
 }
 
 /// Does effect `id` read its own parameters at earlier times (the stepped particle systems sample
@@ -1530,6 +1531,12 @@ pub fn reads_param_history(id: &str) -> bool {
 
 /// Run an effect on a buffer.
 pub fn apply(spec: &EffectSpec, ctx: &EffectCtx, buf: Buf) -> Buf {
+    if external::valid_id(spec.id) {
+        match external::run(spec, ctx, buf) {
+            Ok(out) => return out,
+            Err(buf) => return (spec.render)(ctx, buf),
+        }
+    }
     (spec.render)(ctx, buf)
 }
 

@@ -106,39 +106,28 @@ pub fn session() -> Session {
         importer: Some(Arc::new(MediaImporter)),
         expr: Some(Arc::new(effectcraft_expr::Expressions)),
         expr_check: Some(effectcraft_expr::check_syntax),
-        plugin_loader: effectcraft_plugin::wasm_available().then_some(effectcraft_plugin::loader as effectcraft_engine::PluginLoader),
-        helpers: helper_hooks(),
-        plugin_previewer: effectcraft_plugin::wasm_available().then_some(effectcraft_plugin::preview as effectcraft_engine::PluginPreviewer),
-        plugins_dir: config_dir().map(|d| d.join("Plug-ins")),
         ..Default::default()
     };
     effectcraft_script::install(&mut s);
+    // Craft plugins: loads enabled contributions (skipped in safe mode; the manager still works).
+    effectcraft_plugins::start(&mut s, safe_mode());
     s
 }
 
-/// External effect helpers run as child processes: native builds only.
+/// Safe mode (`--safe-mode`, or `EFFECTCRAFT_SAFE_MODE=1`): no plugin code runs this session.
+pub fn safe_mode() -> bool {
+    std::env::var("EFFECTCRAFT_SAFE_MODE").is_ok_and(|v| v == "1") || std::env::args().any(|a| a == "--safe-mode")
+}
+
+/// `effectcraft-cli plugin …`: the shared Craft plugin commands for this app; returns the exit code.
 #[cfg(not(target_arch = "wasm32"))]
-fn helper_hooks() -> Option<effectcraft_engine::HelperHooks> {
-    use effectcraft_helper_host as hh;
-    // Effects that keep stopping their helper are remembered in the settings folder.
-    if let Some(dir) = config_dir() {
-        hh::blocklist::set_state_dir(dir);
-    }
-    fn scan(retry: bool) -> serde_json::Value {
-        hh::scan_paths(&hh::default_search_paths(config_dir().as_deref()), retry)
-    }
-    Some(effectcraft_engine::HelperHooks { scan, load: hh::load_path, list: hh::list })
+pub fn plugin_cli(args: &[String], out: &mut dyn std::io::Write, err: &mut dyn std::io::Write) -> i32 {
+    effectcraft_plugins::run_cli(args, out, err)
 }
 
-#[cfg(target_arch = "wasm32")]
-fn helper_hooks() -> Option<effectcraft_engine::HelperHooks> {
-    None
-}
-
-/// Stop the external effect helpers (when the app quits).
-pub fn stop_helpers() {
-    #[cfg(not(target_arch = "wasm32"))]
-    effectcraft_helper_host::stop_all();
+/// Stop plugin sessions and native helpers (when the app quits).
+pub fn stop_plugins() {
+    effectcraft_plugins::stop();
 }
 
 /// The platform config directory for EffectCraft (`EFFECTCRAFT_CONFIG_DIR` overrides):

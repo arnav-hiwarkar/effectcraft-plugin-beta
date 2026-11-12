@@ -302,7 +302,7 @@ pub fn page_id(name: &str) -> Option<&'static str> {
         "scripting" | "scriptingexpressions" => "scripting",
         "roto" | "rotobrush" | "models" => "roto",
         "face" | "facetracking" => "face",
-        "library" | "pluginlibrary" | "plugins" | "plugin" => "library",
+        "library" | "pluginlibrary" | "plugins" | "plugin" => "plugins",
         _ => return None,
     };
     Some(id)

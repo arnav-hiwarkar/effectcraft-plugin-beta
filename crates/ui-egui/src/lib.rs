@@ -37,6 +37,8 @@ pub mod menu_keys;
 pub mod menus;
 pub mod native_menu;
 pub mod panels;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod plugins_ui;
 mod pointer_wrap;
 pub mod prefs_live;
 pub mod state;

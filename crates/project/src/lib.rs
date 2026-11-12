@@ -69,6 +69,24 @@ pub struct Project {
     /// Render Queue preferences (Notify, storage overflow folders).
     #[serde(default, skip_serializing_if = "render_queue::RenderQueuePrefs::is_default")]
     pub render_prefs: render_queue::RenderQueuePrefs,
+    /// The Craft plugins this project uses (written on save by the plugin runtime; grants are never
+    /// stored). Projects saved before plugins existed read as an empty list.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub plugins: Vec<PluginRef>,
+}
+
+/// One entry of [`Project::plugins`]: `{id, version, sha256, source, name}` (the shared Craft
+/// project plugin reference; `source` is `catalogue` or `local`). Kept as plain text so the
+/// project crate needs no plugin dependency; the plugin runtime parses and checks it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PluginRef {
+    pub id: String,
+    pub version: String,
+    #[serde(default)]
+    pub sha256: Option<String>,
+    pub source: String,
+    #[serde(default)]
+    pub name: String,
 }
 
 #[cfg(test)]

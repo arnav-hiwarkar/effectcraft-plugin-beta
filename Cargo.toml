@@ -48,8 +48,13 @@ effectcraft-ui-egui = { path = "crates/ui-egui" }
 effectcraft-automation = { path = "crates/automation" }
 effectcraft-opusenc = { path = "crates/opusenc" }
 effectcraft-script = { path = "crates/script" }
-effectcraft-plugin = { path = "crates/plugin" }
-effectcraft-helper-host = { path = "crates/helper-host" }
+effectcraft-plugins = { path = "crates/plugins" }
+# Craft plugin platform (beta workspace layout: sibling checkout). Must become git deps before upstreaming.
+craft-ext-core = { path = "../craft-extensions/crates/ext-core" }
+craft-ext-store = { path = "../craft-extensions/crates/ext-store", features = ["net"] }
+craft-ext-host = { path = "../craft-extensions/crates/ext-host" }
+craft-ext-ui = { path = "../craft-extensions/crates/ext-ui" }
+craft-ext-cli = { path = "../craft-extensions/crates/ext-cli", default-features = false }
 
 # foundation
 thiserror = "2"
@@ -66,8 +71,6 @@ proptest = "1"
 
 # scripting (expressions)
 boa_engine = { version = "0.22", default-features = false }
-# WebAssembly effect plug-ins (sandboxed interpreter; MIT/Apache-2.0, pure Rust)
-wasmi = { version = "2", default-features = false, features = ["std", "validate", "wat", "deterministic", "portable-dispatch"] }
 
 # geometry / fonts
 kurbo = { version = "0.13", features = ["serde"] }

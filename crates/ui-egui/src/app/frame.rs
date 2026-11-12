@@ -228,8 +228,9 @@ impl EffectcraftApp {
             self.session.poll_offload();
             ctx.request_repaint_after(std::time::Duration::from_millis(100));
         }
-        // Plug-in Library: a finished job's toast (also polled with Roto, for other frontends).
-        self.session.poll_library();
+        // Craft plugins: serve their requests, deliver app events, pick up project prompts.
+        #[cfg(not(target_arch = "wasm32"))]
+        crate::plugins_ui::frame(self, ctx);
         // Warp Stabilizer: finish analyses and start queued (re-)analyses in the background.
         if self.session.warp_job.is_some() || !self.session.warp_pending.is_empty() {
             self.session.poll_warp(true);
@@ -518,6 +519,8 @@ impl EffectcraftApp {
         panels::precomp::mini_flowchart(self, &ctx);
         panels::home::capture_thumbnail(self);
         panels::dialogs::show(self, &ctx);
+        #[cfg(not(target_arch = "wasm32"))]
+        crate::plugins_ui::show(self, &ctx);
         updates_ui::show(self, &ctx);
         panels::scriptui_view::sync_panels(self);
         panels::scriptui_view::show_windows(self, &ctx);

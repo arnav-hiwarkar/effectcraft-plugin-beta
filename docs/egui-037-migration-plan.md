@@ -121,8 +121,8 @@ There is exactly one egui family in the baseline. The target must preserve that 
 
 Manifest audit: 38 `Cargo.toml` files (root, 32 `crates/*`, 3 `apps/*`, `xtask`, and the standalone
 plugin). Only `crates/ui-egui`, `apps/effectcraft`, `apps/effectcraft-web` and (through
-`effectcraft-ui-egui`) `apps/effectcraft-cli` use the egui family. `examples/plugins/posterize-bands`
-has its own workspace/lock and no egui. There are no vendored crates and no `[patch]` on the egui
+`effectcraft-ui-egui`) `apps/effectcraft-cli` use the egui family. (`examples/plugins/posterize-bands`,
+since removed with the old plug-in API, had its own workspace/lock and no egui.) There are no vendored crates and no `[patch]` on the egui
 family in the baseline; the only patch is `hayro-syntax`.
 
 ### 1.3 Package, binary, feature and entry-point targets

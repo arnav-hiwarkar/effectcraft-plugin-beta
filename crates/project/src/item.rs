@@ -124,6 +124,7 @@ impl Default for Project {
             render_queue: Vec::new(),
             render_templates: Default::default(),
             render_prefs: Default::default(),
+            plugins: Vec::new(),
         }
     }
 }

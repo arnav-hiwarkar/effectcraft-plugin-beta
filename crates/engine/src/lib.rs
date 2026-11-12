@@ -80,7 +80,6 @@ pub use settings::config;
 pub use settings::prefs;
 pub use settings::shortcuts;
 pub use system::guard;
-pub use system::library;
 pub use system::logging;
 pub use system::perf;
 pub use system::storage;
@@ -89,6 +88,7 @@ pub use system::sysinfo;
 mod doc_state;
 mod error;
 mod event;
+pub mod ext;
 mod fonts;
 mod services;
 mod session;
@@ -202,19 +202,9 @@ pub struct Session {
     /// The JavaScript scripting engine (set by the host that links `effectcraft-script`):
     /// `script.run`, File ▸ Scripts ▸ Run Script File… (`.jsx`/`.js`) and the Script Console.
     pub script: Option<ScriptRunner>,
-    /// Loads WebAssembly effect plug-ins (set by the host that links `effectcraft-plugin` with
-    /// its runtime): `effect.plugins.load`.
-    pub plugin_loader: Option<PluginLoader>,
-    /// External effect helpers (native hosts link `effectcraft-helper-host`):
-    /// `effect.helpers.list`, `effect.helpers.scan`, `effect.helpers.load`.
-    pub helpers: Option<HelperHooks>,
-    /// Renders a module without registering it (`library.preview`; set with `plugin_loader`).
-    pub plugin_previewer: Option<PluginPreviewer>,
-    /// Where effect plug-ins live (hosts set it; else `Plug-ins` next to the settings): the
-    /// Plug-in Library installs into its `Library` folder ([`library`]).
-    pub plugins_dir: Option<std::path::PathBuf>,
-    /// The Plug-in Library's catalog, worker status and the packages this session loaded.
-    pub library: library::Library,
+    /// The Craft plugin runtime (set by the host that links `effectcraft-plugins`): plugin
+    /// commands (`plugin.<id>.<contribution>`), panels, event hooks and project plugin lists.
+    pub plugins: Option<Arc<dyn ext::PluginRuntime>>,
     /// ScriptUI windows and panels opened by scripts (see [`scriptui`]).
     pub script_ui: scriptui::ScriptUi,
     /// The last physical-memory reading (Settings ▸ Memory & CPU budgets); `None` = unknown
@@ -289,27 +279,6 @@ pub struct ScriptRequest<'a> {
 /// column, file} | null}`.
 pub type ScriptRunner = fn(&mut Session, &ScriptRequest) -> Value;
 
-/// Loads one WebAssembly effect plug-in (`bytes`, `source` path) into the effect registry and
-/// describes it (`{id, name, category, version, api, params}`).
-pub type PluginLoader = fn(&[u8], &str) -> std::result::Result<Value, String>;
-
-/// What a host that runs external effect helpers provides (`docs/external-helpers.md`).
-#[derive(Clone, Copy)]
-pub struct HelperHooks {
-    /// Start the helpers installed in the host's search paths and register their effects
-    /// (`retry` forgets the block list first) → `{paths, helpers, loaded, errors}`.
-    pub scan: fn(bool) -> Value,
-    /// Load a file or folder through the helpers that accept it → `{loaded, errors}`.
-    pub load: fn(&str) -> std::result::Result<Value, String>,
-    /// The helpers and their state → `{helpers, blocked}`.
-    pub list: fn() -> Value,
-}
-
-/// Renders one WebAssembly effect module without registering it (the Plug-in Library preview):
-/// `(bytes, width, height, premultiplied RGBA pixels, times in seconds)` → (manifest JSON, one frame
-/// per time).
-pub type PluginPreviewer = fn(&[u8], u32, u32, &[[f32; 4]], &[f64]) -> std::result::Result<(Value, Vec<Vec<[f32; 4]>>), String>;
-
 impl Default for Session {
     /// A new unsaved session: a default project that is both current and saved, no path, no
     /// active jobs, the plain `FsServices`/`NoFootage` defaults, default preferences and keymaps,
@@ -365,11 +334,7 @@ impl Default for Session {
             autosave_folder_override: None,
             snapshot: None,
             script: None,
-            plugin_loader: None,
-            helpers: None,
-            plugin_previewer: None,
-            plugins_dir: None,
-            library: Default::default(),
+            plugins: None,
             script_ui: scriptui::ScriptUi::default(),
             sys_memory: None,
             key_move: None,

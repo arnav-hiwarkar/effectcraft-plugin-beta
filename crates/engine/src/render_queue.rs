@@ -593,6 +593,10 @@ impl Session {
         if self.is_rendering() {
             return Err("a render is already in progress".into());
         }
+        // B9: an effect whose plugin is missing would render as a pass-through; refuse.
+        if let Some(why) = crate::ext::missing_effects_error(&self.project) {
+            return Err(why);
+        }
         self.poll_render();
         let exporter = self.exporter.clone().ok_or("export is not available in this build")?;
         let formats = exporter.formats();

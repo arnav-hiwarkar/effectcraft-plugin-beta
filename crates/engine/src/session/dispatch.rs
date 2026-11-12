@@ -10,6 +10,10 @@ impl Session {
         if self.script_ui.render_host.is_some() && !crate::scriptui::allowed_during_render(id) {
             return Err(EngineError::Other(crate::scriptui::RENDER_WAIT_MESSAGE.into()));
         }
+        if let Some(rt) = self.plugin_command(id) {
+            // Plugin commands are not journaled: their result depends on installed plugin code.
+            return guard::guarded(&format!("plugin command `{id}`"), || rt.run_command(self, id, &params));
+        }
         let spec = commands::find(id).ok_or_else(|| EngineError::UnknownCommand(id.to_string()))?;
         if let Err(why) = (spec.enabled)(self) {
             // Explicit targets (agents, scripts) don't need a UI selection.
@@ -46,6 +50,9 @@ impl Session {
     /// [`Session::execute`] for agents and scripts (MCP, CLI, control channel): unknown top-level
     /// parameters are rejected with the accepted keys instead of being silently ignored.
     pub fn execute_checked(&mut self, id: &str, params: Value) -> Result<Value> {
+        if self.plugin_command(id).is_some() {
+            return self.execute(id, params);
+        }
         let spec = commands::find(id).ok_or_else(|| EngineError::UnknownCommand(id.to_string()))?;
         commands::check_params(spec, &params)?;
         self.execute(id, params)
@@ -73,7 +80,7 @@ impl Session {
         if self.script_ui.render_host.is_some() && !crate::scriptui::allowed_during_render(id) {
             return false;
         }
-        commands::find(id).is_some_and(|c| (c.enabled)(self).is_ok())
+        commands::find(id).is_some_and(|c| (c.enabled)(self).is_ok()) || self.plugin_command(id).is_some()
     }
 
     pub fn toast(&mut self, msg: impl Into<String>) {

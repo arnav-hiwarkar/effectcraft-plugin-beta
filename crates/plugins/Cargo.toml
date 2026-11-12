@@ -1,0 +1,30 @@
+[package]
+name = "effectcraft-plugins"
+description = "EffectCraft's adapter for the shared Craft plugin platform: contract, ops, effects, sessions, data and project plugin lists"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+effectcraft-engine = { workspace = true }
+effectcraft-effects = { workspace = true }
+effectcraft-project = { workspace = true }
+effectcraft-keyframe = { workspace = true }
+serde_json = { workspace = true }
+log = { workspace = true }
+
+# The plugin runtime needs threads, processes and files: native builds only. On wasm32 the crate
+# is an empty adapter (`start` does nothing).
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+craft-ext-core = { workspace = true }
+craft-ext-store = { workspace = true }
+craft-ext-host = { workspace = true }
+craft-ext-cli = { workspace = true }
+bytemuck = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

@@ -1,4 +1,4 @@
-# Plug-ins and extensions
+# Plugins and extensions
 
 EffectCraft's core aims at After Effects parity. What After Effects users get from third parties
 (effect plug-ins, scripts, ScriptUI panels) is an extension in EffectCraft too, and EffectCraft
@@ -11,7 +11,7 @@ Guide):
 
 | After Effects | EffectCraft | |
 |---|---|---|
-| Effect plug-ins (C/C++ SDK, `.aex` / `.plugin`) | [Effect plug-ins](#effect-plug-ins): WebAssembly modules (WebAssembly ABI 1 and 2) or Rust; the `Plug-ins` folder next to the settings loads at start-up | Different ABI: After Effects SDK plug-ins can't run (G8) |
+| Effect plug-ins (C/C++ SDK, `.aex` / `.plugin`) | [Craft plugins](#craft-plugins): sandboxed WebAssembly effects, commands, panels, event hooks, presets and LUTs, shared with the other Craft apps | Different ABI: After Effects SDK plug-ins can't run (G8) |
 | Scripts folder: its scripts are listed in File ▸ Scripts | `Scripts/` in the settings folder (File ▸ Scripts ▸ Install Script File… copies a script there), listed in File ▸ Scripts with the bundled samples; a subfolder (one level) is a submenu named after it | Same |
 | File ▸ Scripts ▸ Run Script File… (`.jsx`, `.jsxbin`) | `.jsx` / `.js` | Gap: `.jsxbin` (an undocumented binary encoding) |
 | File ▸ Scripts ▸ Recent Script Files: the 10 most recently run scripts; Cmd+Option+Shift+D (Ctrl+Alt+Shift+D on Windows) reruns one | File ▸ Scripts ▸ Recent Script Files lists the 10 scripts run last (script files and File ▸ Scripts entries, newest first, kept in the settings); Cmd+Alt+Shift+D runs the most recent one again (`file.runScript {"recent": 0}`, a key that can be changed in Edit ▸ Keyboard Shortcuts) | Same |
@@ -150,274 +150,24 @@ It uses only After Effects' documented scripting API (`comp.selectedProperties`,
 `KeyframeEase`, `setInterpolationTypeAtKey`, `app.settings`, ScriptUI), so it is also a worked
 example of a keyframe tool.
 
-## Effect plug-ins
+## Craft plugins
 
-EffectCraft loads third-party effects through a small, versioned plug-in API (**API version 2**; WebAssembly ABI 1 and 2).
-A plug-in effect behaves exactly like a built-in one: it is listed in Effects & Presets (and the
-Effect menu) under its category, applied by id (`effect.apply {"effect": "org.example.posterize"}`)
-or display name, its parameters are ordinary properties (keyframes, expressions, Effect Controls,
-`prop.set`), and it is saved in projects by id.
+EffectCraft uses the shared Craft plugin platform
+([craft-extensions](https://github.com/storytold/craft-extensions)); the earlier effect plug-in API,
+the legacy plugin manager and external effect helpers were removed when it arrived.
 
-There are two ways to write one:
-
-| | WebAssembly plug-in | Rust plug-in |
-|---|---|---|
-| What | a `.wasm` (or `.wat`) module | a type implementing `effectcraft_effects::plugin::EffectPlugin` |
-| Loaded by | Effect ▸ Install Effect Plug-in… (copied into the `Plug-ins` folder next to the settings and loaded on every start-up), Effect ▸ Load Effect Plug-in… / `effect.plugins.load {path \| folder}` (loads in this session only), the `Plug-ins` folder next to the settings at start-up, or `effect.plugins.install {path \| folder}` | `register_plugin(Arc::new(MyEffect))` in an app that links EffectCraft's crates |
-| Sandbox | yes: no imports (no files, clock or network), fuel-limited, at most 1 GiB of memory, deterministic floats | none (it is your code) |
-| Platforms | desktop and CLI (the wasmi interpreter, crate feature `effectcraft-plugin/wasm`); not the web build | everywhere |
-
-`effect.plugins.list` lists what is loaded: `{api, wasm, plugins: [{id, name, category, version,
-author, source, params}]}`.
-
-### The contract
-
-* **Pixels** are premultiplied RGBA `f32` (0–1; values may exceed 1 in 32 bpc projects), row
-  major, processed **in place**. The buffer is the layer's (after masks and the effects above),
-  possibly at preview resolution (`scale` = buffer pixels per layer pixel) and padded.
-* **Parameters** arrive flattened to `f64`s in the order they are declared: slider, angle,
-  checkbox (0 / 1) and popup (0-based index) take one value, point two (already in **buffer
-  pixels**), colour four (RGBA 0–1).
-* **Time** is layer time in seconds. A WebAssembly module written for ABI 2 also gets the
-  layer's neighbouring frames at other times (see [WebAssembly ABI](#webassembly-abi)).
-* Rendering must be **deterministic** and may run on several threads at once (a WebAssembly
-  plug-in gets one instance per thread).
-* A failed render (an error code, a trap, running out of fuel) leaves the frame unchanged.
-
-### The manifest
-
-Every plug-in describes itself with a JSON manifest:
-
-```json
-{
-  "api": 1,
-  "id": "org.effectcraft.example.posterize-bands",
-  "name": "Posterize Bands",
-  "category": "Stylize",
-  "version": "1.0.0",
-  "author": "EffectCraft contributors",
-  "description": "Quantizes luminance into tinted bands.",
-  "params": [
-    {"id": "levels", "name": "Levels", "type": "slider", "default": 4, "min": 2, "max": 64, "sliderMax": 16, "decimals": 0},
-    {"id": "mix", "name": "Tint Amount", "type": "slider", "default": 50, "min": 0, "max": 100},
-    {"id": "tint", "name": "Tint", "type": "color", "default": [1.0, 0.55, 0.2, 1.0]},
-    {"id": "invert", "name": "Invert Bands", "type": "checkbox", "default": false}
-  ]
-}
-```
-
-* `id`: stable, reverse-domain; letters, digits, `.`, `_`, `-`. `ec.` is reserved for built-ins.
-  Ids must be unique (a second plug-in with a taken id is refused).
-* `category`: one of the Effects & Presets categories (`Blur & Sharpen`, `Stylize`, …) or a new
-  one, which appears after the built-in categories.
-* Parameter types: `slider` (`default`, `min`, `max`, optional `sliderMin`, `sliderMax`,
-  `decimals`), `angle` (`default` degrees), `checkbox` (`default` bool), `popup` (`options`,
-  `default` index), `point` (`default` as fractions of the layer size, `[0.5, 0.5]` = centre),
-  `color` (`default` RGBA 0–1). Parameter ids are letters, digits and `_`, unique; at most 256
-  parameters; a slider needs `min ≤ default ≤ max` (and `sliderMin ≤ sliderMax`); the manifest
-  is at most 1 MiB.
-
-### WebAssembly ABI
-
-A module with **no imports** exports:
-
-| export | signature | |
-|---|---|---|
-| `memory` | memory | linear memory shared with the host |
-| `ec_api_version` | `() -> i32` | `1` for ABI 1, `2` for ABI 2 (neighbouring frames) |
-| `ec_manifest_ptr`, `ec_manifest_len` | `() -> i32` | the UTF-8 JSON manifest in memory |
-| `ec_alloc` | `(bytes: i32) -> i32` | a buffer of at least `bytes` bytes, 8-byte aligned; it may reuse the previous one |
-| `ec_render` (ABI 1) | `(pixels: i32, width: i32, height: i32, params: i32, nparams: i32, time: f64, scale: f64) -> i32` | process the pixels in place; return 0 on success |
-| `ec_render2` (ABI 2) | `ec_render`'s arguments, then `prev: i32, prev_time: f64, next: i32, next_time: f64, flags: i32` | the same, with the neighbouring frames; return 0 on success |
-
-For each frame the host calls `ec_alloc` once for a buffer holding the parameters (`nparams`
-little-endian `f64`s) followed by the pixels (`width × height × 4` little-endian `f32`s,
-premultiplied RGBA, row-major), fills it, calls the module's render export, and reads the pixels
-back. An ABI 2 module gets two more pixel buffers after the current frame: the previous and next
-frames, resampled onto the current buffer's grid. At a frame boundary they are the frames before
-and after it (`time ± 1/fps`); between frames they are the two frames that bracket `time`.
-
-The neighbour buffers are always allocated (zeroed when the layer has no pixels there, so a
-module can read both without a null check). `flags` bit 0 is set when `prev` holds a real frame,
-bit 1 when `next` does; `prev_time` / `next_time` are those frames' layer times in seconds (0
-when absent). The ABI version is the module's `ec_api_version` and is independent of the
-manifest's `api` (the native plug-in API): a module can use ABI 2 while its manifest says
-`"api": 1`. Because an ABI 2 module reads other times, its layer is keyed on the layer time in
-the render cache; ABI 1 modules keep the time-independent key.
-
-Each call gets a fuel budget proportional to the frame size; a module that loops forever stops
-with an error instead of hanging the app.
-
-#### Example
-
-[`examples/plugins/posterize-bands`](../examples/plugins/posterize-bands) is a complete plug-in in
-plain Rust (no dependencies):
-
-```sh
-cd examples/plugins/posterize-bands
-cargo build --release --target wasm32-unknown-unknown
-# then, in EffectCraft: Effect ▸ Install Effect Plug-in…
-#   → target/wasm32-unknown-unknown/release/posterize_bands.wasm  (copied into Plug-ins, loads on start-up)
-# or in-session only: Effect ▸ Load Effect Plug-in…
-# or headless:
-effectcraft-cli exec effect.plugins.load '{"path": "target/wasm32-unknown-unknown/release/posterize_bands.wasm"}'
-```
-
-**Bundles.** `effect.plugins.install {"folder": ...}` installs a whole plug-in folder in one
-go: every `.wasm` at its top level is copied into the `Plug-ins` folder (and loads at once),
-and every `.jsx` at its top level is installed as a ScriptUI panel — so a third-party plug-in
-ships as one folder the user installs once. A `.wasm` that does not load is not copied (the
-install rolls it back), and per-file problems in a folder install come back in `errors`
-instead of failing the whole bundle.
-
-**What an install does and does not do.** It is a security boundary: it copies code into a
-folder the app runs at every start, so:
-
-* Only `.wasm` (`path` / a bundle's `.wasm`) and `.jsx` (a bundle's panel) are installed; other
-  files in a bundle (readmes, manifests, sources) are skipped. Files are named by their own
-  entry name, so a bundle cannot carry a path, a `..` component or a name that escapes the
-  destination folder.
-* Nothing is overwritten. An existing plug-in or panel with the same file name makes that file
-  fail with "already installed": delete it from `Plug-ins` / `Scripts/ScriptUI Panels` first to
-  update it (versioning the file name is the other option). A bundle is installed file by file,
-  so one collision does not undo the rest.
-* Files over 64 MiB are refused before they are read, rather than copied into a startup folder.
-* A `.wasm` is loaded once, in the same sandbox it runs in later (see below), so a module that
-  cannot load is reported instead of failing every start. That load runs the module's start-up
-  code and its metadata exports; `ec_render` is never called, and a panel's script is not run at
-  install time (it runs when the panel opens, as with any installed panel). The copy made before
-  the load is then removed again — best effort: if removing it fails, the command says so and
-  names the file, and you delete it from `Plug-ins` yourself.
-* A `.wasm` is uninstalled by deleting it from `Plug-ins` (the next start no longer loads it):
-  there is no `effect.plugins.uninstall`. A panel installed here is an installed script, so
-  `file.uninstallScript {name}` removes it. Replacing either means removing it first.
-* Hidden files (names starting with `.`, such as macOS `._x.wasm` copies) are skipped in a bundle
-  and refused as a single install. A panel name that differs from an installed panel's only in
-  letter case counts as the same name.
-* Installed plug-ins share the `Plug-ins` folder with the [Plug-in Library](#plug-in-library)
-  (which keeps its packages in `Plug-ins/Library`). An effect id can be registered only once: a
-  plug-in whose id is already loaded, from either kind of install, is refused. At start-up the
-  files installed here load before the library's packages, so if both carry the same id (for
-  example after files were copied by hand), the file here wins and the library package reports
-  the duplicate.
-
-**The sandbox.** A plug-in runs in the [wasmi](https://github.com/wasmi-labs/wasmi) interpreter
-with no imports (no file, network or clock access), deterministic floats, a fuel budget per
-frame and a 1 GiB memory cap, so a plug-in cannot escape the sandbox, hang the app or render
-differently on another machine. A ScriptUI panel is different: it is a script with the app's
-scripting object model, so it can read and write project data through commands; file and
-network access for scripts follow Settings ▸ Scripting & Expressions, exactly as for a script
-installed with File ▸ Scripts ▸ Install ScriptUI Panel….
-
-Any language that compiles to WebAssembly works (C, Zig, AssemblyScript…) as long as the module
-has no imports. `crates/plugin/src/tests.rs` has a plug-in written directly in WebAssembly text.
-
-### Rust plug-ins
-
-```rust
-use std::sync::Arc;
-use effectcraft_effects::plugin::*;
-
-struct Swap(PluginManifest);
-
-impl EffectPlugin for Swap {
-    fn manifest(&self) -> &PluginManifest { &self.0 }
-    fn render(&self, frame: &mut PluginFrame, params: &PluginParams, _time: f64) -> Result<(), String> {
-        if params.b("on") {
-            for p in frame.pixels.iter_mut() { p.swap(0, 2); }
-        }
-        Ok(())
-    }
-}
-
-register_plugin(Arc::new(Swap(manifest)))?; // before the UI builds its menus
-```
-
-`PluginParams` reads values by parameter id (`f`, `b`, `point`, `color`, and in API 2 `point3`,
-`layer`, `text`). At most 1024 plug-in effects can be registered per process.
-
-## Plug-in API 2 (native plug-ins)
-
-API 2 is for Rust plug-ins and for hosts that bring effects from elsewhere (such as
-[external effect helpers](external-helpers.md)); the WebAssembly ABI is versioned separately
-(ABI 2 adds the neighbouring frames, see [WebAssembly ABI](#webassembly-abi)). Manifests with
-`"api": 1` or `2` are accepted, `effect.plugins.list` reports `api: 2`, and up to 1024 plug-in
-effects can be registered.
-
-* **New parameter types**: `point3` (`default` `[x, y, z]`; x, y arrive in buffer pixels, z as is),
-  `layer` (another layer of the composition; flattens to its id, -1 for none, read with
-  `PluginParams::layer`), `text` (a string field) and `hidden` (a string that is not shown, for
-  opaque plug-in data). `text` / `hidden` take no slot in `flat`; their strings are in
-  `PluginParams::texts`, one per such parameter in declaration order, read with
-  `PluginParams::text(id)`. `slider` gains `"integer": true` (shown with 0 decimals) and every
-  parameter an optional `"group"` path (`"Advanced/Edges"`; informational). WebAssembly modules
-  can't use `point3`, `layer`, `text` or `hidden`.
-* **`PluginFrame`** also carries `origin` (buffer pixels of layer pixel (0, 0); padding shifts it)
-  and `layer_size` (layer pixels).
-* **`EffectPlugin::padding(params, time, scale, layer_size, instance_key) -> u32`** asks for that
-  many transparent buffer pixels on every side before rendering (glows, regions of definition
-  larger than the input); at most 4096. `layer_size` is the layer's size in layer pixels (so
-  sizes relative to the frame can be measured) and `instance_key` identifies the applied effect
-  instance (see `PluginHost::instance_key`).
-* **`EffectPlugin::render_v2(frame, params, time, host)`** (default: calls `render`) gets a
-  `PluginHost` with `input_at(layer_time)` (the effect's input at another time, in its own extent;
-  the effects above this one are applied), `layer_input(param_id, layer_time)` (a layer parameter's
-  layer, effects and masks applied, resampled into the frame's grid), `params_at(layer_time)`,
-  `frame_rate()`, `time()`, `instance_key()` (a stable id of the applied effect instance: the
-  same on every frame, different per layer and per application; plug-ins that keep state between
-  frames pool their native instances by it) and `frame_range()` (the layer's source time range in
-  layer-time seconds, `None` when it has none). Images are `PluginImage { width, height, pixels, origin, scale }`.
-  It may run on several threads at once.
-
-### Compatibility
-
-The API version is checked when a plug-in loads: this build implements plug-in API 1 and 2 and
-WebAssembly ABI 1 and 2; a manifest or module for another version is refused with a message.
-ABI 1 modules load and render unchanged; ABI 2 modules add `ec_render2` and the neighbouring
-frames. Within a version the contract above does not change; additions (new parameter types,
-new optional exports) bump the version.
-
-## Plug-in Library
-
-Settings ▸ Plug-in Library (also Effect ▸ Plug-in Library…) lists WebAssembly effect plug-ins
-published by the community, and installs, updates and removes them without bundling them into
-the app. Only WebAssembly effects are listed: they run in the same sandbox as any plug-in, so a
-package can't read files, open the network or crash the app.
-
-* **One reviewed catalog.** The list comes from one `index.json` in the
-  [`storytold/effectcraft-plugins`](https://github.com/storytold/effectcraft-plugins) repository;
-  packages are added by pull request and reviewed there. The app has no field for another
-  catalog; `library.refresh {catalog}` (for plug-in authors testing an entry) takes an `index.json`
-  on GitHub or a local file, and the page then says it shows a test catalog until Refresh.
-* **Nothing is downloaded until you ask.** Fetch Catalog (`library.refresh`) reads the catalog;
-  Install (`library.install`) downloads the package's `.wasm`, checks its SHA-256 (and its size, when the
-  catalog gives one) against the catalog and loads it. Downloads use the system's `curl`,
-  `https://` only and starting on GitHub's hosts (redirects stay on `https://`; the SHA-256 check
-  is what guarantees the file).
-* **Where it goes.** `<Plug-ins>/Library/<id>/<version>/<id>.wasm` (the `Plug-ins` folder next to
-  the settings), listed in `Library/installed.json`. Installed packages load at start-up, each
-  checked against the SHA-256 it was installed with. The catalog last fetched is kept as
-  `Library/catalog.json`, so the list works offline.
-* **Restart after removing or updating.** Registered effects can't be unloaded: removing or
-  updating a package whose effects are loaded takes effect at the next start, and the list says
-  "Restart EffectCraft to finish".
-* **Preview before installing.** Preview (`library.preview`) downloads the package's module
-  (checked against the catalog's size and SHA-256) without installing it, and renders its
-  effect in the sandbox on a built-in sample frame with default parameters: 2 seconds at 12 fps,
-  with a Before/After split. The details show it playing, the effects with their parameter names,
-  "Open on GitHub" (the package's `repo`) and, when the package has a `preview.video` link (an
-  `https://` YouTube, Vimeo or GitHub URL), "Watch video".
-* **Missing effects.** `library.missing` lists the effects a project uses that aren't installed,
-  and the catalog packages that provide them.
-
-Commands (UI, CLI, control channel and MCP): `library.list {query?, tag?, installed?}`,
-`library.refresh {catalog?, wait?}`, `library.preview {id, version?, wait?}`,
-`library.install {id, version?, wait?}`, `library.update {id?, wait?}`, `library.uninstall {id}`,
-`library.missing`, `library.loadInstalled`. Downloads run in the background; `wait: true` runs
-them to the end (scripts and tests).
-
-### Publishing a plug-in
-
-[publishing-plugins.md](publishing-plugins.md) walks through it from an empty folder to a listed
-package: build, test, release on GitHub, the catalog entry and its fields, testing the entry with a
-local `file://` catalog, the pull request and its review, updates and removal.
+- **Make a plugin:** the author guide, `docs/plugins/author-guide.md` in craft-extensions, and the
+  examples there (`examples/halftone`, `examples/color-notes`, `examples/film-looks`).
+- **What EffectCraft offers plugins** (contracts, operations and their permissions, events, where
+  contributions appear): `docs/plugins/contracts/effectcraft.md` in craft-extensions, or
+  `effectcraft-cli plugin contract`.
+- **Use plugins:** Settings ▸ Plugins (also Plugins ▸ Manage Plugins…), or
+  `effectcraft-cli plugin --help` (`search`, `install`, `setup`, `enable`, `grant`, `update`,
+  `rollback`, `remove`…). Installing never turns anything on; permissions are granted per app.
+- **Safe mode:** `effectcraft --safe-mode` (or `EFFECTCRAFT_SAFE_MODE=1`) runs no plugin code; the
+  manager still works.
+- **Agents:** `plugin.list`, `plugin.resources` (presets and LUT files), `plugin.missing`, and each
+  plugin command as `plugin.<plugin id>.<contribution>`. Confined MCP sessions may only list.
+- **Projects** record the plugins their effects use; opening one shows which are missing, and a
+  missing plugin's effects keep their settings and pass the image through. The Render Queue refuses
+  to render while an effect's plugin is missing.

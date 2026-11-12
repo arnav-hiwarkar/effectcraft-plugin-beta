@@ -1,6 +1,7 @@
 # ADR 0001: External effect helpers
 
-- Status: proposed
+- Status: superseded (2026-11-12) by the shared Craft plugin platform (craft-extensions,
+  `docs/plugins/beta-design.md`); `effectcraft-helper-host` was removed. Kept for the record.
 - Date: 2026-10-11
 - Context: review of storytold/effectcraft#508 (an in-process OpenFX host)
 
