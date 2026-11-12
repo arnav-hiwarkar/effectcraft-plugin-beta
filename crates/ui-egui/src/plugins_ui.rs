@@ -83,7 +83,7 @@ pub fn show(app: &mut EffectcraftApp, ctx: &egui::Context) {
             match tree {
                 Some(node) => {
                     let mut out = Vec::new();
-                    node_ui(app, ui, &sf.key, &node, &mut out);
+                    node_ui(app, ui, &sf.key, sf.rev, &node, &mut out);
                     events.extend(out.into_iter().map(|(w, v)| (sf.key.clone(), sf.rev, w, v)));
                 }
                 None => {
@@ -125,19 +125,19 @@ fn rgba(c: [f32; 4]) -> egui::Color32 {
 }
 
 /// Draws one validated tree; widget changes are pushed to `out` as (widget id, value).
-fn node_ui(app: &mut EffectcraftApp, ui: &mut egui::Ui, key: &str, n: &Node, out: &mut Vec<(String, Value)>) {
+fn node_ui(app: &mut EffectcraftApp, ui: &mut egui::Ui, key: &str, rev: u64, n: &Node, out: &mut Vec<(String, Value)>) {
     let auto = |app: &mut EffectcraftApp, id: &str, r: &egui::Response, label: &str| app.auto.add(&format!("plugin.{key}.{id}"), r.rect, label);
     match n {
         Node::Column { children } => {
-            ui.vertical(|ui| children.iter().for_each(|c| node_ui(app, ui, key, c, out)));
+            ui.vertical(|ui| children.iter().for_each(|c| node_ui(app, ui, key, rev, c, out)));
         }
         Node::Row { children } => {
-            ui.horizontal_wrapped(|ui| children.iter().for_each(|c| node_ui(app, ui, key, c, out)));
+            ui.horizontal_wrapped(|ui| children.iter().for_each(|c| node_ui(app, ui, key, rev, c, out)));
         }
         Node::Group { label, children } => {
             ui.group(|ui| {
                 ui.label(egui::RichText::new(label).strong());
-                children.iter().for_each(|c| node_ui(app, ui, key, c, out));
+                children.iter().for_each(|c| node_ui(app, ui, key, rev, c, out));
             });
         }
         Node::Label { text } => {
@@ -162,23 +162,32 @@ fn node_ui(app: &mut EffectcraftApp, ui: &mut egui::Ui, key: &str, n: &Node, out
             }
         }
         Node::Slider { id, label, value, min, max } => {
-            let mut v = *value;
-            let r = ui.add(egui::Slider::new(&mut v, *min..=*max).text(label));
+            let edit_id = egui::Id::unique(("plugin-slider-edit", key, id));
+            let (mut v, dragging, old_rev) = ui.ctx().data_mut(|d| d.get_temp::<(f64, bool, u64)>(edit_id)).unwrap_or((*value, false, rev));
+            if !dragging && old_rev != rev {
+                v = *value;
+            }
+            let r = ui.push_id((key, id), |ui| ui.add(egui::Slider::new(&mut v, *min..=*max).text(label))).inner;
+            let active = r.dragged() || r.is_pointer_button_down_on();
+            ui.ctx().data_mut(|d| d.insert_temp(edit_id, (v, active, rev)));
             auto(app, id, &r, label);
-            if r.drag_stopped() || (r.changed() && !r.dragged()) {
+            if r.drag_stopped() || (dragging && !active) || (r.changed() && !active) {
                 out.push((id.clone(), json!(v)));
             }
         }
         Node::TextInput { id, label, value } => {
-            let mut v = value.clone();
+            let edit_id = egui::Id::unique(("plugin-text-edit", key, rev, id));
+            let (mut v, mut sent) = ui.ctx().data_mut(|d| d.get_temp::<(String, String)>(edit_id)).unwrap_or((value.clone(), value.clone()));
             ui.horizontal(|ui| {
                 ui.label(label);
-                let r = ui.text_edit_singleline(&mut v);
+                let r = ui.push_id((key, rev, id), |ui| ui.text_edit_singleline(&mut v)).inner;
                 auto(app, id, &r, label);
-                if r.lost_focus() && v != *value {
+                if (r.lost_focus() || (r.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)))) && v != sent {
                     out.push((id.clone(), json!(v)));
+                    sent = v.clone();
                 }
             });
+            ui.ctx().data_mut(|d| d.insert_temp(edit_id, (v, sent)));
         }
         Node::Select { id, label, options, selected } => {
             let mut sel = *selected;

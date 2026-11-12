@@ -163,7 +163,6 @@ mod schema;
 
 use super::commands;
 pub use aep::is_aep_path;
-pub(crate) use batch::fold_since;
 pub use enabled::always;
 pub(crate) use enabled::{has_comp, has_keys, has_layers, has_project_selection, not_yet, not_yet_run};
 pub use params::match_path_of;

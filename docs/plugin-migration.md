@@ -63,3 +63,28 @@ All eight permitted checks passed without warnings on Linux: `cargo check -p`
 Checks ran one at a time. No builds, app runs, tests, clippy or workspace gates
 were run. The added point-default assertion has not been executed.
 The retired-identifier scan and `git diff --check` are clean.
+
+### Transaction, UI and rendering safety
+
+Queued events belong to the dispatching session and document replacement epoch. The
+runtime drops events after Open/New or a surface revision change. On the document
+thread, every operation is authorized again with freshly read grants; contribution
+enablement and the captured release version/digest are checked before service and
+commit. A failed event discards its journal entries and edits. A successful event
+records exactly one undo step, even when its edits exceeded the history limit.
+
+Text inputs retain edits per surface/revision/widget and submit on Enter or focus
+loss. Sliders retain their drag value and submit on release.
+
+Every effect id absent from the built-in registry is an external effect, including
+legacy ids without a slash. Missing instances retain their parameter groups as
+explicit placeholders. Previews pass through with a warning; final frame saves and
+exports fail with the effect/plugin name on missing, incompatible, failed or revoked
+filters. Final intent is supplied by the consumer's error channel, never inferred
+from image resolution. Final renders bypass processed-layer caches to recheck rights.
+
+Project plugin references retain the recorded version and digest on save, together
+with contribution ids and state schema versions. Applying a new effect records its
+provenance immediately. A different loaded release cannot upgrade or render these
+instances silently: install the recorded release, or explicitly migrate a copy of
+the project and its saved parameters/provenance. Automatic migration is not performed.

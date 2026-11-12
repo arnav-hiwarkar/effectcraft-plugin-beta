@@ -85,8 +85,8 @@ pub fn context(params: &[Param], ctx: &EffectCtx, buf: &Buf) -> Value {
         "scale": finite(buf.scale),
         "origin": [finite(-buf.offset[0]), finite(-buf.offset[1])],
         "full": [finite(full[0]) as u32, finite(full[1]) as u32],
-        // EffectCraft renders previews at reduced resolution; full-resolution renders are final.
-        "quality": if buf.scale < 1.0 { "draft" } else { "final" },
+        // The final consumer supplies an error sink; resolution does not determine intent.
+        "quality": if ctx.env.errors.is_some() { "final" } else { "draft" },
         "seed": ctx.seed,
         "color": if ctx.env.working_linear { "linear-srgb" } else { "srgb" },
     })

@@ -165,6 +165,9 @@ pub struct Session {
     pub events: Vec<Event>,
     /// Commands executed: (id, params).
     pub journal: Vec<(String, Value)>,
+    /// Opaque session identity for queued plugin events. Preserve for this session only.
+    #[doc(hidden)]
+    pub plugin_document_token: Arc<()>,
     /// Processed-layer pixels reused across frames and edits (content-keyed, never stale).
     pub layer_cache: Arc<LayerCache>,
     /// The last Cryptomatte pick probe (see [`Session::crypto_probe_job`]). Public only so that
@@ -319,6 +322,7 @@ impl Default for Session {
             roto_pending: vec![],
             events: vec![],
             journal: vec![],
+            plugin_document_token: Arc::new(()),
             layer_cache: Arc::new(LayerCache::default()),
             crypto_probe: Default::default(),
             disk_cache: None,

@@ -64,6 +64,8 @@ use opts::{MAX_THROUGH, Through};
 pub use pipeline::{Collapsed, FootagePicture, MediaOverride, PropertyOverride};
 
 pub struct Renderer<'a> {
+    /// Final consumer error sink, inherited by nested renderers.
+    pub errors: Option<&'a std::sync::Mutex<Vec<String>>>,
     pub project: &'a Project,
     pub footage: &'a dyn FootageSource,
     pub expr: Option<&'a dyn ExprHost>,
@@ -108,3 +110,37 @@ pub struct Renderer<'a> {
 
 #[cfg(test)]
 mod tests;
+
+/// Final consumers refuse missing or incompatible external instances, retaining their groups.
+/// Also used before rendering, so disabled layers and empty exports cannot hide substitutions.
+pub fn plugin_effect_errors(project: &Project) -> Vec<String> {
+    let mut errors = Vec::new();
+    for (_, comp) in project.comps() {
+        for layer in &comp.layers {
+            for group in layer.effects().into_iter().flat_map(|fx| fx.groups()) {
+                let GroupKind::Effect { effect } = &group.kind else { continue };
+                if let Some(why) = effectcraft_effects::external::incompatible(effect, project) {
+                    errors.push(format!("plugin effect `{effect}`: {why}"));
+                } else if effectcraft_effects::find(effect).is_none() {
+                    errors.push(format!("missing plugin effect `{effect}`; its settings are preserved"));
+                }
+            }
+        }
+    }
+    errors.sort();
+    errors.dedup();
+    errors
+}
+
+/// Whether cached layer pixels could conceal a changed external filter or revoked grant.
+pub fn has_external_effects(project: &Project) -> bool {
+    project.comps().any(|(_, comp)| {
+        comp.layers.iter().any(|layer| {
+            layer
+                .effects()
+                .into_iter()
+                .flat_map(|fx| fx.groups())
+                .any(|group| matches!(&group.kind, GroupKind::Effect { effect } if !effectcraft_effects::registry().iter().any(|spec| spec.id == effect)))
+        })
+    })
+}

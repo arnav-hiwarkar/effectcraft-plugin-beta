@@ -80,6 +80,9 @@ pub struct Project {
 /// project crate needs no plugin dependency; the plugin runtime parses and checks it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PluginRef {
+    /// Contribution id -> persisted state schema version (older projects omit it).
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub contributions: std::collections::BTreeMap<String, u32>,
     pub id: String,
     pub version: String,
     #[serde(default)]

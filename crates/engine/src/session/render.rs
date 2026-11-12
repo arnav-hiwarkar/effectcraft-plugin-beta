@@ -132,14 +132,25 @@ impl Session {
     /// [`Session::render_rgba8`], or with `transparent` the frame's own straight alpha (what a
     /// render with RGB + Alpha channels writes) instead of compositing over the background.
     pub fn render_rgba8_alpha(&self, comp: ItemId, t: Tick, max_side: u32, transparent: bool) -> Result<(u32, u32, Vec<u8>)> {
-        if !transparent {
-            return self.render_rgba8(comp, t, max_side);
+        if let Some(why) = crate::ext::missing_effects_error(&self.project) {
+            return Err(EngineError::Other(why));
         }
         let c = self.project.comp(comp).ok_or(EngineError::NoComp)?;
         let long = c.width.max(c.height).max(1) as f64;
         let scale = if max_side == 0 { 1.0 } else { (max_side as f64 / long).min(1.0) };
-        let img = self.render(comp, t, RenderOpts { scale, backend: effectcraft_render::Backend::Auto, ..Default::default() });
-        Ok((img.width, img.height, img.to_rgba8()))
+        let errors = std::sync::Mutex::new(Vec::new());
+        let mut r = self.renderer(RenderOpts { scale, backend: effectcraft_render::Backend::Auto, ..Default::default() });
+        if effectcraft_render::has_external_effects(&self.project) {
+            r.cache = None;
+        }
+        r.errors = Some(&errors);
+        let img = r.comp_frame(comp, t);
+        let errors = errors.into_inner().unwrap_or_else(std::sync::PoisonError::into_inner);
+        if !errors.is_empty() {
+            return Err(EngineError::Other(errors.join("; ")));
+        }
+        let rgba = if transparent { img.to_rgba8() } else { img.to_rgba8_over(c.background) };
+        Ok((img.width, img.height, rgba))
     }
 
     /// Make the media layer and the layer cache let go of what they decoded from `footage`'s

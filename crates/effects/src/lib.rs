@@ -587,6 +587,8 @@ pub trait EffectHost: Sync {
 /// Extra context the renderer may supply (all optional; `Default` is "nothing known").
 #[derive(Clone, Copy, Default)]
 pub struct EffectEnv<'a> {
+    /// Final render errors, shared by nested renders. None for interactive previews.
+    pub errors: Option<&'a std::sync::Mutex<Vec<String>>>,
     /// The layer's masks (enabled ones, top to bottom).
     pub masks: &'a [MaskShape],
     pub host: Option<&'a dyn EffectHost>,

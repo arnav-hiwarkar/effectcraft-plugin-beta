@@ -51,7 +51,17 @@ fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
 }
 
 /// A host call from a worker, served on the session's thread.
+#[derive(Clone)]
+struct Dispatch {
+    document: Arc<()>,
+    epoch: u64,
+    sha256: Option<String>,
+    surface: Option<(String, u64)>,
+}
+
 struct Request {
+    inv: Invocation,
+    dispatch: Dispatch,
     /// Identity of the invocation (its cancel flag's address).
     key: usize,
     plugin: ExtensionId,
@@ -77,13 +87,17 @@ fn inv_key(inv: &Invocation) -> usize {
 
 /// The `AppApi` a worker's session sees: forwards to the session's thread and waits.
 struct Bridge {
+    context: Arc<Mutex<Option<Dispatch>>>,
     tx: Sender<Request>,
 }
 
 impl Bridge {
     fn ask(&self, inv: &Invocation, kind: Kind) -> Result<Value, OpError> {
         let (reply, rx) = mpsc::channel();
+        let dispatch = lock(&self.context).clone().ok_or_else(|| OpError::new(Code::Cancelled, "no dispatch context"))?;
         let req = Request {
+            inv: inv.clone(),
+            dispatch,
             key: inv_key(inv),
             plugin: inv.plugin.clone(),
             label: inv.label.clone(),
@@ -124,7 +138,7 @@ impl AppApi for Bridge {
 }
 
 enum Job {
-    Event { inv: Invocation, event: Value, done: Option<Sender<Result<(), String>>> },
+    Event { dispatch: Dispatch, inv: Invocation, event: Value, done: Option<Sender<Result<(), String>>> },
     Stop,
 }
 
@@ -347,7 +361,17 @@ impl Runtime {
             {
                 let inv = self.invocation(&plugin, version, &contribution, &format!("Start · {name}"), declared);
                 if let Some(w) = st.workers.get(&worker) {
-                    let _ = w.tx.try_send(Job::Event { inv, event: json!({"event": "init"}), done: None });
+                    let _ = w.tx.try_send(Job::Event {
+                        dispatch: Dispatch {
+                            document: s.plugin_document_token(),
+                            epoch: s.script_ui.project_epoch,
+                            sha256: st.loaded.iter().find(|p| p.id == plugin).and_then(|p| p.sha256.clone()),
+                            surface: None,
+                        },
+                        inv,
+                        event: json!({"event": "init"}),
+                        done: None,
+                    });
                 }
             }
         }
@@ -373,6 +397,7 @@ impl Runtime {
                 };
                 let category = c.category.clone().unwrap_or_else(|| "Plugins".into());
                 effectcraft_engine::effects::external::register(&id, &c.label, &category, c.params.iter().map(param_spec).collect(), Arc::new(render))?;
+                effectcraft_engine::effects::external::set_identity(&id, p.version.to_string(), p.sha256.clone(), c.state_version);
                 st.effects.push(id);
                 Ok(())
             }
@@ -490,11 +515,15 @@ impl Runtime {
 
     fn spawn(&self, key: &str, code: Program) -> Result<Worker, String> {
         let (tx, rx) = mpsc::sync_channel::<Job>(QUEUE);
-        let api: Arc<dyn AppApi> = Arc::new(Bridge { tx: self.tx.clone() });
+        let context = Arc::new(Mutex::new(None));
+        let api: Arc<dyn AppApi> = Arc::new(Bridge { tx: self.tx.clone(), context: context.clone() });
         let grants: Arc<dyn Grants> = self.grants.clone();
         let log = self.log.clone();
         let name = key.to_string();
-        std::thread::Builder::new().name(format!("plugin {key}")).spawn(move || worker_main(&name, code, rx, api, grants, log)).map_err(|e| e.to_string())?;
+        std::thread::Builder::new()
+            .name(format!("plugin {key}"))
+            .spawn(move || worker_main(&name, code, rx, api, grants, log, context))
+            .map_err(|e| e.to_string())?;
         Ok(Worker { tx })
     }
 
@@ -533,7 +562,18 @@ impl Runtime {
         {
             let st = lock(&self.state);
             let w = st.workers.get(worker).ok_or("the plugin is not running")?;
-            match w.tx.try_send(Job::Event { inv, event, done }) {
+            let surface = if event["event"] == "ui" {
+                event["surface"].as_str().zip(event["rev"].as_u64()).map(|(key, rev)| (format!("{}/{key}", inv.plugin), rev))
+            } else {
+                None
+            };
+            let dispatch = Dispatch {
+                document: s.plugin_document_token(),
+                epoch: s.script_ui.project_epoch,
+                sha256: st.loaded.iter().find(|p| p.id == inv.plugin).and_then(|p| p.sha256.clone()),
+                surface,
+            };
+            match w.tx.try_send(Job::Event { dispatch, inv, event, done }) {
                 Ok(()) => {}
                 Err(TrySendError::Full(_)) => return Err("the plugin is busy".into()),
                 Err(TrySendError::Disconnected(_)) => return Err("the plugin stopped".into()),
@@ -584,9 +624,37 @@ impl Runtime {
         }
     }
 
+    fn validate_request(&self, s: &Session, r: &Request) -> Result<StoreGrants, OpError> {
+        if !Arc::ptr_eq(&s.plugin_document_token(), &r.dispatch.document) || s.script_ui.project_epoch != r.dispatch.epoch {
+            return Err(OpError::new(Code::Cancelled, "the active document was replaced"));
+        }
+        if let Some((key, rev)) = &r.dispatch.surface {
+            if !surface_current(&lock(&self.state), key, *rev) {
+                return Err(OpError::new(Code::Stale, "the plugin surface changed"));
+            }
+        }
+        let view = GrantView::open(&self.root, self.app.clone()).map_err(|e| OpError::denied(e.to_string()))?;
+        let store = craft_ext_store::Store::at(&self.root).state().map_err(|e| OpError::denied(e.to_string()))?;
+        let digest = store.packages.get(&r.plugin).and_then(|p| p.releases.get(&r.inv.version)).map(|p| &p.sha256);
+        let enabled = view.setup(&r.plugin).is_some_and(|a| a.enabled.contains(&r.contribution));
+        if !enabled
+            || view.stopped(&r.plugin, r.inv.version)
+            || digest != r.dispatch.sha256.as_ref()
+            || view.generation(&r.plugin) != r.inv.grant_generation
+            || r.inv.cancelled()
+        {
+            return Err(OpError::denied("the invoking contribution, release or permissions changed"));
+        }
+        Ok(StoreGrants::new(view))
+    }
+
     fn transaction(&self, s: &mut Session, begin: Request, rx: &Receiver<Request>, deferred: &mut VecDeque<Request>) {
         if begin.sent.elapsed() > OP_TIMEOUT {
             let _ = begin.reply.send(Err(OpError::new(Code::Stale, "the request expired")));
+            return;
+        }
+        if let Err(e) = self.validate_request(s, &begin) {
+            let _ = begin.reply.send(Err(e));
             return;
         }
         let Some((version, plugin_name, own_panels)) = self.plugin_info(&begin.plugin) else {
@@ -598,7 +666,6 @@ impl Runtime {
             return;
         }
         let scope = Scope { comp: s.active_comp_id(), selection: s.state.selected_layers.clone(), plugin_name };
-        let generation = self.grants.generation(&begin.plugin);
         let mark = s.begin_group();
         let selection: Vec<u64> = scope.selection.iter().map(|l| l.0).collect();
         if begin.reply.send(Ok(json!({"selection": selection}))).is_err() {
@@ -622,8 +689,17 @@ impl Runtime {
                 deferred.push_back(r);
                 continue;
             }
+            let valid = self.validate_request(s, &begin);
             match r.kind {
                 Kind::Call(op, args) => {
+                    CAPTURED_SELECTION.with(|ids| *ids.borrow_mut() = selection.clone());
+                    let auth = valid.and_then(|grants| craft_ext_host::api::authorize(contract(), &grants, &begin.inv, &op, &args));
+                    CAPTURED_SELECTION.with(|ids| ids.borrow_mut().clear());
+                    if let Err(e) = auth {
+                        let _ = r.reply.send(Err(e));
+                        s.finish_group(mark, &label, false);
+                        return;
+                    }
                     let out = match ops::run(s, &scope, &op, args, &own_panels) {
                         Ok(Outcome::Value(v)) => Ok(v),
                         Ok(Outcome::Ui(change)) => {
@@ -636,13 +712,12 @@ impl Runtime {
                     let _ = r.reply.send(out);
                 }
                 Kind::Finish(commit) => {
-                    let still = !self.grants.stopped(&begin.plugin, version) && self.grants.generation(&begin.plugin) == generation;
-                    let commit = commit && still;
+                    let commit = commit && valid.is_ok();
                     s.finish_group(mark, &label, commit);
                     if commit {
                         self.apply_ui(&begin, version, &scope.plugin_name, ui);
                     }
-                    let _ = r.reply.send(Ok(Value::Null));
+                    let _ = r.reply.send(valid.map(|_| Value::Null));
                     return;
                 }
                 Kind::Begin => {
@@ -700,6 +775,10 @@ impl Runtime {
     }
 }
 
+fn surface_current(st: &State, key: &str, rev: u64) -> bool {
+    st.surfaces.get(key).is_some_and(|sf| sf.open && sf.rev == rev)
+}
+
 fn local(s: &str) -> bool {
     !s.is_empty() && s.len() <= 48 && s.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_'))
 }
@@ -716,7 +795,15 @@ fn read_capped(path: &Path) -> Result<Vec<u8>, String> {
 }
 
 /// The worker loop: owns one sandboxed session (or native helper) and runs its events in order.
-fn worker_main(name: &str, program: Program, rx: Receiver<Job>, api: Arc<dyn AppApi>, grants: Arc<dyn Grants>, log: LogFn) {
+fn worker_main(
+    name: &str,
+    program: Program,
+    rx: Receiver<Job>,
+    api: Arc<dyn AppApi>,
+    grants: Arc<dyn Grants>,
+    log: LogFn,
+    context: Arc<Mutex<Option<Dispatch>>>,
+) {
     enum Runner {
         Wasm(WasmSession),
         Native(craft_ext_host::native::Helper),
@@ -745,7 +832,8 @@ fn worker_main(name: &str, program: Program, rx: Receiver<Job>, api: Arc<dyn App
     };
     while let Ok(job) = rx.recv() {
         match job {
-            Job::Event { inv, event, done } => {
+            Job::Event { dispatch, inv, event, done } => {
+                *lock(&context) = Some(dispatch);
                 let r = match &mut runner {
                     Runner::Wasm(s) => s.dispatch(inv, &event),
                     Runner::Native(h) => h.dispatch(inv, &event),
@@ -985,8 +1073,12 @@ impl PluginRuntime for Runtime {
         used_plugins(project)
             .into_iter()
             .filter_map(|id| {
+                if let Some(recorded) = project.plugins.iter().find(|p| p.id == id) {
+                    return Some(recorded.clone());
+                }
                 if let Some(p) = st.loaded.iter().find(|p| p.id.as_str() == id) {
                     Some(effectcraft_project::PluginRef {
+                        contributions: p.manifest.contributions_for(&self.app).map(|c| (c.id.clone(), c.state_version)).collect(),
                         id,
                         version: p.version.to_string(),
                         sha256: p.sha256.clone(),
@@ -1075,5 +1167,142 @@ impl PluginRuntime for Runtime {
             .map(|l| json!({"plugin": l.plugin.as_str(), "contribution": l.contribution, "label": l.label, "path": l.path.to_string_lossy()}))
             .collect();
         json!({"presets": presets, "luts": luts})
+    }
+}
+
+#[cfg(test)]
+mod regression_tests {
+    use super::*;
+    use craft_ext_core::tier::Tier;
+    use craft_ext_store::state::{AppSetup, PackageRec, ReleaseRec, STATE_FILE, StoreState};
+
+    fn request(rt: &Runtime, s: &Session) -> Request {
+        let id = ExtensionId::new("io.github.tests.transaction").unwrap();
+        let inv = rt.invocation(&id, Version::parse("1.0.0").unwrap(), "command", "Test", Arc::from([]));
+        Request {
+            key: inv_key(&inv),
+            plugin: id,
+            label: inv.label.clone(),
+            contribution: inv.contribution.clone(),
+            declared: inv.declared.clone(),
+            inv,
+            dispatch: Dispatch { document: s.plugin_document_token(), epoch: s.script_ui.project_epoch, sha256: Some("a".repeat(64)), surface: None },
+            kind: Kind::Begin,
+            reply: mpsc::channel().0,
+            sent: Instant::now(),
+        }
+    }
+
+    #[test]
+    fn queued_requests_reject_disabled_contribution_release_change_and_new_document() {
+        let dir = tempfile::tempdir().unwrap();
+        let rt = Runtime::new(dir.path().to_path_buf(), false).unwrap();
+        let s = Session::default();
+        let r = request(&rt, &s);
+        let mut store = StoreState::default();
+        store.packages.insert(
+            r.plugin.clone(),
+            PackageRec {
+                origin: Origin::Dev,
+                releases: BTreeMap::from([(r.inv.version, ReleaseRec { origin: None, sha256: "a".repeat(64), tier: Tier::Dev, installed: 0 })]),
+            },
+        );
+        store.apps.insert(
+            rt.app.clone(),
+            BTreeMap::from([(
+                r.plugin.clone(),
+                AppSetup { active: Some(r.inv.version), enabled: BTreeSet::from(["command".into(), "other".into()]), ..Default::default() },
+            )]),
+        );
+        let save = |store: &StoreState| std::fs::write(dir.path().join(STATE_FILE), serde_json::to_vec(store).unwrap()).unwrap();
+        save(&store);
+        assert!(rt.validate_request(&s, &r).is_ok());
+        store.apps.get_mut(&rt.app).unwrap().get_mut(&r.plugin).unwrap().enabled.remove("command");
+        save(&store);
+        assert!(rt.validate_request(&s, &r).is_err(), "another enabled contribution must not authorize this one");
+        store.apps.get_mut(&rt.app).unwrap().get_mut(&r.plugin).unwrap().enabled.insert("command".into());
+        store.packages.get_mut(&r.plugin).unwrap().releases.get_mut(&r.inv.version).unwrap().sha256 = "b".repeat(64);
+        save(&store);
+        assert!(rt.validate_request(&s, &r).is_err(), "same version with different bytes is a different release");
+        assert!(rt.validate_request(&Session::default(), &r).is_err());
+    }
+
+    #[test]
+    fn queued_surface_revision_is_rechecked_at_service() {
+        let dir = tempfile::tempdir().unwrap();
+        let rt = Runtime::new(dir.path().to_path_buf(), false).unwrap();
+        let s = Session::default();
+        let mut r = request(&rt, &s);
+        let key = format!("{}/panel", r.plugin);
+        lock(&rt.state).surfaces.insert(
+            key.clone(),
+            Surface {
+                title: "Panel".into(),
+                tree: None,
+                rev: 1,
+                window: false,
+                open: true,
+                worker: "worker".into(),
+                contribution: "command".into(),
+                declared: Arc::from([]),
+                plugin: r.plugin.clone(),
+                version: r.inv.version,
+                plugin_name: "Tests".into(),
+            },
+        );
+        assert!(surface_current(&lock(&rt.state), &key, 1));
+        r.dispatch.surface = Some((key.clone(), 1));
+        lock(&rt.state).surfaces.get_mut(&key).unwrap().rev = 2;
+        let error = rt.validate_request(&s, &r).err().unwrap();
+        assert_eq!(error.code, Code::Stale);
+    }
+
+    #[test]
+    fn transaction_journal_rollback_and_bounded_history_commit() {
+        let mut s = Session::default();
+        s.prefs.general.undo_levels = 2;
+        s.journal.push(("prior".into(), Value::Null));
+        let before = s.project.clone();
+        let mark = s.begin_group();
+        s.execute("comp.new", json!({"name": "rolled back"})).unwrap();
+        s.finish_group(mark, "Plugin", false);
+        assert!(Arc::ptr_eq(&s.project, &before));
+        assert_eq!(s.journal, vec![("prior".into(), Value::Null)]);
+        let mark = s.begin_group();
+        for i in 0..8 {
+            s.execute("comp.new", json!({"name": format!("Comp {i}")})).unwrap();
+        }
+        s.finish_group(mark, "Plugin", true);
+        assert_eq!(s.history.undo.len(), 1);
+        assert_eq!(s.history.undo[0].0, "Plugin");
+        assert!(Arc::ptr_eq(&s.history.undo[0].1, &before));
+        assert_eq!(s.journal.len(), 9);
+    }
+
+    #[test]
+    fn missing_effects_include_plain_and_unknown_ec_ids_and_preserve_parameters() {
+        let mut s = Session::default();
+        s.execute("comp.new", json!({"name": "Test"})).unwrap();
+        s.execute("layer.newSolid", json!({"name": "Layer"})).unwrap();
+        let cid = s.active_comp_id().unwrap();
+        let p = Arc::make_mut(&mut s.project);
+        let fx = p.comp_mut(cid).unwrap().layers[0].props.sub_mut("effects").unwrap();
+        for id in ["legacy-filter", "ec.unknown-plugin"] {
+            let mut group = effectcraft_project::PropGroup::new(900, id, id);
+            group.kind = effectcraft_project::GroupKind::Effect { effect: id.into() };
+            group.children.push(effectcraft_project::Node::Prop(effectcraft_project::Property::new(
+                901,
+                "amount",
+                "Amount",
+                effectcraft_keyframe::Value::Scalar(42.0),
+            )));
+            fx.children.push(effectcraft_project::Node::Group(group));
+        }
+        let before = serde_json::to_value(&s.project).unwrap();
+        let missing = effectcraft_engine::ext::missing_rendering_effects(&s.project);
+        assert_eq!(missing.len(), 2);
+        let error = effectcraft_engine::ext::missing_effects_error(&s.project).unwrap();
+        assert!(error.contains("legacy-filter") && error.contains("ec.unknown-plugin"));
+        assert_eq!(before, serde_json::to_value(&s.project).unwrap());
     }
 }

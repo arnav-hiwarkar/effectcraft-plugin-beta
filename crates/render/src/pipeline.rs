@@ -147,6 +147,7 @@ impl<'a> Renderer<'a> {
     /// A renderer over `project` and `footage` with the given options.
     pub fn new(project: &'a Project, footage: &'a dyn FootageSource, opts: RenderOpts) -> Renderer<'a> {
         Renderer {
+            errors: None,
             project,
             footage,
             expr: None,
@@ -831,6 +832,7 @@ impl<'a> Renderer<'a> {
         }
         let host = FxHost { r: self, ctx, layer, origin, index: 0, original: original.as_ref() };
         let env = EffectEnv {
+            errors: self.errors,
             masks: &mask_shapes,
             host: Some(&host),
             comp_time: ctx.time.seconds(),
@@ -849,7 +851,17 @@ impl<'a> Renderer<'a> {
             .take_while(|(i, _)| *i < limit)
             .filter(|(_, g)| g.enabled)
             .filter_map(|(i, g)| match &g.kind {
-                GroupKind::Effect { effect } => effectcraft_effects::find(effect).map(|s| (i, g, s)),
+                GroupKind::Effect { effect } => {
+                    if let Some(why) = effectcraft_effects::external::incompatible(effect, self.project) {
+                        effectcraft_effects::external::report(self.errors, effect, &why);
+                        None
+                    } else if let Some(spec) = effectcraft_effects::find(effect) {
+                        Some((i, g, spec))
+                    } else {
+                        effectcraft_effects::external::report(self.errors, effect, "missing effect; settings preserved");
+                        None
+                    }
+                }
                 _ => None,
             })
             .filter(|(_, _, s)| !effectcraft_effects::audio_fx::is_audio_effect(s.id))

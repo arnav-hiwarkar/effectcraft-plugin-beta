@@ -69,6 +69,10 @@ pub trait PluginRuntime: Send + Sync {
 }
 
 impl Session {
+    /// Distinguishes sessions even when their project replacement epochs happen to match.
+    pub fn plugin_document_token(&self) -> Arc<()> {
+        self.plugin_document_token.clone()
+    }
     /// Frontends call this every frame: serves plugin requests and delivers app events.
     pub fn pump_plugins(&mut self) {
         if let Some(rt) = self.plugins.clone() {
@@ -85,18 +89,33 @@ impl Session {
     }
 
     /// Starts a group of edits that becomes one undo step (see [`Session::finish_group`]).
-    pub fn begin_group(&self) -> GroupMark {
-        GroupMark { project: self.project.clone(), history: self.history.clone(), state: self.state.clone(), events: self.events.len() }
+    pub fn begin_group(&mut self) -> GroupMark {
+        GroupMark {
+            journal: std::mem::take(&mut self.journal),
+            project: self.project.clone(),
+            history: self.history.clone(),
+            state: self.state.clone(),
+            events: self.events.len(),
+        }
     }
 
     /// Ends a group: `commit` folds the edits made since `mark` into one undo step named `label`;
     /// otherwise the project, history and editor state return to `mark` and the events the group
     /// published are dropped.
     pub fn finish_group(&mut self, mark: GroupMark, label: &str, commit: bool) {
+        let pending = std::mem::replace(&mut self.journal, mark.journal);
         if commit {
-            crate::commands::fold_since(self, &mark.project, label);
+            self.journal.extend(pending);
+            if self.journal.len() > 10_000 {
+                self.journal.drain(..self.journal.len() - 10_000);
+            }
+            self.history = mark.history;
+            if !Arc::ptr_eq(&self.project, &mark.project) {
+                self.history.record(label, mark.project, self.prefs.general.undo_levels.max(1) as usize);
+            }
             return;
         }
+        self.history = mark.history.clone();
         if std::sync::Arc::ptr_eq(&self.project, &mark.project) {
             self.state = mark.state;
             self.events.truncate(mark.events);
@@ -116,16 +135,16 @@ impl Session {
 
 /// Where a plugin event's undo group started ([`Session::begin_group`]).
 pub struct GroupMark {
+    journal: Vec<(String, Value)>,
     project: Arc<Project>,
     history: crate::History,
     state: crate::EditorState,
     events: usize,
 }
 
-/// Whether `id` names an effect contributed by a plugin (`<plugin id>/<contribution>`); built-in
-/// ids start with `ec.` and never contain `/`.
+/// Every id absent from the built-in registry is external, including legacy plugin ids.
 pub fn is_plugin_effect(id: &str) -> bool {
-    !id.starts_with("ec.") && id.contains('/')
+    !effectcraft_effects::registry().iter().any(|s| s.id == id)
 }
 
 /// Plugin effects used in `project` whose plugin is not loaded (missing, off or kill-listed):
@@ -137,7 +156,7 @@ pub fn missing_rendering_effects(project: &Project) -> Vec<(String, String)> {
             for g in l.effects().into_iter().flat_map(|fx| fx.groups()) {
                 if let GroupKind::Effect { effect } = &g.kind
                     && is_plugin_effect(effect)
-                    && effectcraft_effects::find(effect).is_none()
+                    && (effectcraft_effects::find(effect).is_none() || effectcraft_effects::external::incompatible(effect, project).is_some())
                 {
                     let plugin = effect.split('/').next().unwrap_or(effect).to_string();
                     out.push((effect.clone(), plugin));

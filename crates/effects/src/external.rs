@@ -11,7 +11,7 @@
 //!   unchanged; [`unregister`] hides the effect from [`crate::find`] and listings without a restart.
 //!   Instances of a hidden effect keep their property groups untouched and render as a
 //!   pass-through (the renderer skips effects it cannot find), with [`status`] for the badge.
-//! - A render error never panics: the input passes through and the error is kept for [`status`].
+//! - Preview errors pass through with a status badge; final consumers receive named failures.
 
 use std::collections::HashMap;
 use std::sync::{Arc, OnceLock, PoisonError, RwLock};
@@ -28,6 +28,7 @@ pub trait ExternalRender: Send + Sync {
 
 struct Entry {
     spec: &'static EffectSpec,
+    identity: Option<(String, Option<String>, u32)>,
     /// `None`: unregistered (hidden, passes through).
     render: Option<Arc<dyn ExternalRender>>,
     /// The last render error (cleared by a good render) or why the effect is off.
@@ -73,8 +74,7 @@ pub fn register(id: &str, name: &str, category: &str, params: Vec<ParamSpec>, re
         return Err(format!("`{id}` is a built-in effect"));
     }
     let mut r = registry().write().unwrap_or_else(PoisonError::into_inner);
-    let reuse =
-        r.entries.get(id).map(|e| e.spec).filter(|s| s.name == name && s.category == category && same_params(&s.params, &params));
+    let reuse = r.entries.get(id).map(|e| e.spec).filter(|s| s.name == name && s.category == category && same_params(&s.params, &params));
     let spec = match reuse {
         Some(s) => s,
         None => {
@@ -82,19 +82,12 @@ pub fn register(id: &str, name: &str, category: &str, params: Vec<ParamSpec>, re
                 return Err("too many plugin effects were loaded in this session; restart EffectCraft".into());
             }
             r.leaked += 1;
-            let spec: &'static EffectSpec = Box::leak(Box::new(EffectSpec {
-                id: leak(id),
-                name: leak(name),
-                category: leak(category),
-                params,
-                render: pass,
-                gpu: false,
-                float: true,
-            }));
+            let spec: &'static EffectSpec =
+                Box::leak(Box::new(EffectSpec { id: leak(id), name: leak(name), category: leak(category), params, render: pass, gpu: false, float: true }));
             spec
         }
     };
-    r.entries.insert(id.to_string(), Entry { spec, render: Some(render), status: None });
+    r.entries.insert(id.to_string(), Entry { spec, identity: None, render: Some(render), status: None });
     drop(r);
     crate::file_cache::bump_generation();
     Ok(spec)
@@ -129,13 +122,16 @@ pub fn find(id: &str) -> Option<&'static EffectSpec> {
 /// What Effect Controls shows on an external effect: its last render error, why it is off, or
 /// that its plugin is missing. `None` for built-ins and healthy externals.
 pub fn status(id: &str) -> Option<String> {
-    if !valid_id(id) {
+    if crate::registry().iter().any(|s| s.id == id) {
         return None;
     }
     let r = registry().read().unwrap_or_else(PoisonError::into_inner);
     match r.entries.get(id) {
         Some(e) => e.status.clone(),
-        None => Some(format!("The plugin for this effect ({}) is not installed or is turned off. Its settings are kept; it passes the image through.", id.split('/').next().unwrap_or(id))),
+        None => Some(format!(
+            "The plugin for this effect ({}) is not installed or is turned off. Its settings are kept; it passes the image through.",
+            id.split('/').next().unwrap_or(id)
+        )),
     }
 }
 
@@ -155,10 +151,17 @@ pub(crate) fn run(spec: &EffectSpec, ctx: &EffectCtx, buf: Buf) -> Result<Buf, B
         let r = registry().read().unwrap_or_else(PoisonError::into_inner);
         match r.entries.get(spec.id) {
             Some(e) if std::ptr::eq(e.spec, spec) => e.render.clone(),
-            _ => return Err(buf),
+            Some(_) => {
+                report(ctx.env.errors, spec.id, "plugin release or parameter schema changed during rendering");
+                return Ok(buf);
+            }
+            None => return Err(buf),
         }
     };
-    let Some(render) = render else { return Ok(buf) };
+    let Some(render) = render else {
+        report(ctx.env.errors, spec.id, "plugin was disabled or removed");
+        return Ok(buf);
+    };
     let input = buf.clone();
     match render.render(ctx, buf) {
         Ok(out) => {
@@ -169,8 +172,42 @@ pub(crate) fn run(spec: &EffectSpec, ctx: &EffectCtx, buf: Buf) -> Result<Buf, B
         }
         Err(e) => {
             log::warn!("plugin effect `{}`: {e}", spec.id);
+            report(ctx.env.errors, spec.id, &e);
             set_status(spec.id, Some(e));
             Ok(input)
+        }
+    }
+}
+
+/// Attach the loaded release identity for project provenance checks.
+pub fn set_identity(id: &str, version: String, digest: Option<String>, state_version: u32) {
+    if let Some(e) = registry().write().unwrap_or_else(PoisonError::into_inner).entries.get_mut(id) {
+        e.identity = Some((version, digest, state_version));
+    }
+}
+
+/// A recorded release must never be silently substituted, even by a newer release.
+pub fn incompatible(id: &str, project: &effectcraft_project::Project) -> Option<String> {
+    let plugin = id.split('/').next().unwrap_or(id);
+    let recorded = project.plugins.iter().find(|p| p.id == plugin)?;
+    let r = registry().read().unwrap_or_else(PoisonError::into_inner);
+    let e = r.entries.get(id)?;
+    let matches = e.identity.as_ref().is_some_and(|(v, sha, state_version)| {
+        let contribution = id.split_once('/').map_or(id, |(_, c)| c);
+        v == &recorded.version
+            && recorded.sha256.as_ref().is_none_or(|h| sha.as_ref() == Some(h))
+            && recorded.contributions.get(contribution).is_none_or(|saved| saved == state_version)
+    });
+    (!matches).then(|| format!("plugin {plugin} requires recorded version {} and digest {:?}; explicit migration required", recorded.version, recorded.sha256))
+}
+
+/// Record a final-render failure; previews expose errors through the status badge.
+pub fn report(errors: Option<&std::sync::Mutex<Vec<String>>>, id: &str, why: &str) {
+    if let Some(errors) = errors {
+        let mut errors = errors.lock().unwrap_or_else(PoisonError::into_inner);
+        let message = format!("plugin effect `{id}`: {why}");
+        if errors.len() < 256 && !errors.contains(&message) {
+            errors.push(message);
         }
     }
 }
@@ -202,6 +239,48 @@ mod tests {
         let ctx = EffectCtx { params: &params, time: 0.0, layer_size: [2.0, 1.0], seed: 1, adjustment: false, env: EffectEnv::default() };
         let img = Image { width: 2, height: 1, data: vec![[0.25, 0.25, 0.25, 1.0]; 2] };
         crate::apply(spec, &ctx, Buf { img, offset: [0.0; 2], scale: 1.0 }).img.data[0][0]
+    }
+
+    #[test]
+    fn external_provenance_refuses_release_and_state_substitution() {
+        let id = "io.github.tests.provenance/fx";
+        register(id, "Provenance", "Plugins", vec![], Arc::new(Fill(Ok(1.0)))).unwrap();
+        set_identity(id, "2.0.0".into(), Some("b".repeat(64)), 2);
+        let mut project = effectcraft_project::Project::default();
+        project.plugins.push(effectcraft_project::PluginRef {
+            id: "io.github.tests.provenance".into(),
+            version: "1.0.0".into(),
+            sha256: Some("a".repeat(64)),
+            source: "local".into(),
+            name: "Provenance".into(),
+            contributions: [("fx".into(), 1)].into(),
+        });
+        assert!(incompatible(id, &project).is_some());
+        set_identity(id, "1.0.0".into(), Some("a".repeat(64)), 2);
+        assert!(incompatible(id, &project).is_some(), "state schema is also provenance");
+        set_identity(id, "1.0.0".into(), Some("a".repeat(64)), 1);
+        assert!(incompatible(id, &project).is_none());
+    }
+
+    #[test]
+    fn external_final_error_channel_reports_failure_and_revocation() {
+        let spec = register("io.github.tests.final/fx", "Final", "Plugins", vec![], Arc::new(Fill(Err("revoked".into())))).unwrap();
+        let errors = std::sync::Mutex::new(Vec::new());
+        let params = Params::default();
+        let ctx = EffectCtx {
+            params: &params,
+            time: 0.0,
+            layer_size: [1.0; 2],
+            seed: 0,
+            adjustment: false,
+            env: EffectEnv { errors: Some(&errors), ..Default::default() },
+        };
+        let buf = || Buf { img: Image { width: 1, height: 1, data: vec![[0.25; 4]] }, offset: [0.0; 2], scale: 0.5 };
+        crate::apply(spec, &ctx, buf());
+        assert!(errors.lock().unwrap()[0].contains("io.github.tests.final/fx"));
+        unregister(spec.id, "disabled");
+        crate::apply(spec, &ctx, buf());
+        assert_eq!(errors.lock().unwrap().len(), 2);
     }
 
     #[test]

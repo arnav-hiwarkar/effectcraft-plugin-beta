@@ -214,12 +214,21 @@ pub fn export(job: &Job, progress: &mut dyn FnMut(&Progress) -> bool) -> Result<
 /// ([`effectcraft_render::passes`]); otherwise it never waits and frames render in parallel
 /// batches as in [`export`].
 pub async fn export_async(job: &Job<'_>, progress: &mut dyn FnMut(&Progress) -> bool) -> Result<Report> {
+    let failures = effectcraft_render::plugin_effect_errors(job.project);
+    if !failures.is_empty() {
+        return Err(ExportError::Unsupported(failures.join("; ")));
+    }
     let t0 = Instant::now();
     let cx = Cx::new(job);
     // A job of a Render Queue run leaves the pooled working textures warm for the next one.
     let render = RenderEnd(job.accel.filter(|_| job.options.caches.is_none()));
     let mut r = export_with(&cx, progress, t0).await;
     drop(render);
+    let failures = cx.plugin_errors.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone();
+    if !failures.is_empty() {
+        cx.remove_cancelled_outputs()?;
+        r = Err(ExportError::Unsupported(failures.join("; ")));
+    }
     if matches!(r, Err(ExportError::Cancelled)) {
         cx.remove_cancelled_outputs()?;
         return r;

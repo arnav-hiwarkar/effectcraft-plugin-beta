@@ -30,7 +30,7 @@ struct Isolated {
 }
 
 /// `skip_hdr_step`: no HDR step, for a float output (ProEXR; [`RenderOpts::skip_hdr_step`]).
-fn render_with(s: &Session, project: &Project, comp: ItemId, t: Tick, scale: f64, skip_hdr_step: bool) -> Image {
+fn render_with(s: &Session, project: &Project, comp: ItemId, t: Tick, scale: f64, skip_hdr_step: bool) -> Result<Image> {
     let opts = RenderOpts {
         scale,
         backend: Backend::Auto,
@@ -42,14 +42,24 @@ fn render_with(s: &Session, project: &Project, comp: ItemId, t: Tick, scale: f64
     let mut r = Renderer::new(project, s.footage.as_ref(), opts);
     r.expr = s.expr.as_deref();
     r.accel = s.accel.as_deref();
-    r.comp_frame(comp, t)
+    let errors = std::sync::Mutex::new(Vec::new());
+    r.errors = Some(&errors);
+    let image = r.comp_frame(comp, t);
+    let errors = errors.into_inner().unwrap_or_else(std::sync::PoisonError::into_inner);
+    if !errors.is_empty() {
+        return Err(EngineError::Other(errors.join("; ")));
+    }
+    Ok(image)
 }
 
 /// The comp frame and each visible layer rendered alone (top layer first). `skip_hdr_step`: as
 /// [`render_with`].
 fn isolate(s: &Session, cid: ItemId, t: Tick, scale: f64, skip_hdr_step: bool) -> Result<(Image, Vec<Isolated>)> {
+    if let Some(why) = crate::ext::missing_effects_error(&s.project) {
+        return Err(EngineError::Other(why));
+    }
     let comp = s.project.comp(cid).ok_or(EngineError::NoComp)?;
-    let full = render_with(s, &s.project, cid, t, scale, skip_hdr_step);
+    let full = render_with(s, &s.project, cid, t, scale, skip_hdr_step)?;
     let any_solo = comp.layers.iter().any(|l| l.switches.solo && l.has_video());
     let ids: Vec<LayerId> = comp
         .layers
@@ -77,7 +87,7 @@ fn isolate(s: &Session, cid: ItemId, t: Tick, scale: f64, skip_hdr_step: bool) -
             }
         }
         let Some((name, blend, opacity)) = info else { continue };
-        let image = render_with(s, &p, cid, t, scale, skip_hdr_step);
+        let image = render_with(s, &p, cid, t, scale, skip_hdr_step)?;
         out.push(Isolated { name, blend, opacity, image });
     }
     Ok((full, out))

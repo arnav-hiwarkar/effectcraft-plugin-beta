@@ -252,6 +252,7 @@ impl Beside {
 /// A job being exported: the job, the project with the Render Settings overrides applied, the
 /// job's layer cache and per-frame timing for the render log.
 pub(crate) struct Cx<'a> {
+    pub plugin_errors: Mutex<Vec<String>>,
     pub job: &'a Job<'a>,
     pub project: Project,
     /// Processed layer buffers shared by the job's frames, as the viewer's layer cache: static
@@ -345,6 +346,7 @@ impl<'a> Cx<'a> {
             caches.of(r).set_gate(job.accel.and_then(|a| a.miss_gate()));
         }
         let cx = Cx {
+            plugin_errors: Mutex::new(Vec::new()),
             job,
             project,
             caches,
@@ -468,7 +470,9 @@ impl<'a> Cx<'a> {
         let mut r = Renderer::new(&self.project, self.job.footage, opts);
         r.expr = self.job.expr;
         r.accel = self.job.accel;
-        r.cache = Some(self.caches.of(on));
+        // Final renders bypass processed-layer caches so revocation cannot reuse old pixels.
+        r.cache = (!effectcraft_render::has_external_effects(&self.project)).then(|| self.caches.of(on));
+        r.errors = Some(&self.plugin_errors);
         r
     }
 

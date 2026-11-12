@@ -280,6 +280,9 @@ pub fn upgrade_effects(p: &mut Project) {
             for n in &mut fx.children {
                 let effectcraft_project::Node::Group(g) = n else { continue };
                 let effectcraft_project::GroupKind::Effect { effect } = &g.kind else { continue };
+                if crate::ext::is_plugin_effect(effect) {
+                    continue;
+                }
                 if let Some(spec) = effectcraft_effects::find(effect) {
                     effectcraft_effects::migrate::upgrade_instance(spec, g, &mut effectcraft_project::build::Ids(&mut next), size);
                     if to_effect_space {

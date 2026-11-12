@@ -164,7 +164,11 @@ fn drop_payload(ui: &egui::Ui, rect: Rect, p: &egui::Painter, t: &Tokens, layer_
 /// sign at `at`, after the effect's name, with the message on hover. The frame shows the input
 /// as is; the effect's settings are kept.
 fn render_error_mark(app: &mut EffectcraftApp, ui: &mut egui::Ui, bp: &egui::Painter, effect: &str, g: &PropGroup, at: egui::Pos2) {
-    let Some(err) = effectcraft_engine::effects::external::status(effect) else { return };
+    let Some(err) =
+        effectcraft_engine::effects::external::incompatible(effect, &app.session.project).or_else(|| effectcraft_engine::effects::external::status(effect))
+    else {
+        return;
+    };
     let wr = bp.text(at, Align2::LEFT_CENTER, "⚠", Tokens::semibold(12.0), app.tokens.warning);
     let resp = ui.interact(wr.expand(2.0), egui::Id::unique(("ec-fx-error", g.uid)), Sense::hover());
     app.auto.add(&format!("effectControls.effect.{}.error", g.uid), wr, &err);
