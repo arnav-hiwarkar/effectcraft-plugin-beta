@@ -15,13 +15,7 @@ pub const APP: &str = "effectcraft";
 
 /// The contracts this build provides (B2). Keep `craft-ext-cli`'s `known_apps` table in step.
 pub fn provided() -> Provided {
-    Provided::new(&[
-        ("raster.filter", 1, 0),
-        ("effectcraft.session", 1, 0),
-        ("resource.preset", 1, 0),
-        ("resource.lut", 1, 0),
-        ("craft-theme", 1, 0),
-    ]).without(craft_ext_core::manifest::ContributionKind::Tool, "Tools are not supported in EffectCraft yet")
+    Provided::new(&[("raster.filter", 1, 0), ("effectcraft.session", 1, 1), ("resource.preset", 1, 0), ("resource.lut", 1, 0), ("craft-theme", 1, 0)])
 }
 
 thread_local! {
@@ -83,6 +77,33 @@ fn build() -> AppContract {
         display_name: "EffectCraft",
         provided: provided(),
         ops: vec![
+            op("comp.new",OpKind::Edit,"Create a composition, including when no composition is open. Subsequent events capture the new active composition.","{name?,width?,height?,frameRate?,duration?}","{comp:id}",edit_document,"`document.edit:document`"),
+
+            op("layer.addItem",OpKind::Edit,"Add an existing project composition/asset as a layer; never imports a path.","{item,time?,index?,position?,duration?}","object",edit_document,"`document.edit:document`"),
+            op("layer.newText",OpKind::Edit,"Create a text layer with engine-validated typography.","{text,name?,position?,size?,font?,fill?}","object",edit_document,"`document.edit:document`"),
+            op("layer.newShape",OpKind::Edit,"Create a procedural rectangle, ellipse, star or polygon.","{kind?,name?,size?,fill?,stroke?,position?}","object",edit_document,"`document.edit:document`"),
+            op("layer.setSwitch",OpKind::Edit,"Change layer video/audio/solo/lock/3D and other engine switches.","{layers,switch,value?}","object",edit_document,"`document.edit:document`"),
+
+            op("project.summary",OpKind::Query,"Project items, compositions and asset metadata; no file contents.","{}","object",read_document,"`document.read:document`"),
+            op("layer.tree",OpKind::Query,"Layer property tree, effects and keyframe metadata; bounded depth.","{layer,depth?,time?}","object",read_document,"`document.read:document`"),
+            op("time.set",OpKind::Edit,"Move the playhead through the canonical timeline command.","{time}","object",edit_document,"`document.edit:document`"),
+
+            op("markers.set",OpKind::Edit,"Edit a composition marker by index (time in composition seconds).","{index,time?,comment?,duration?}","object",edit_document,"`document.edit:document`"),
+            op("markers.delete",OpKind::Edit,"Delete a composition marker by index.","{index}","object",edit_document,"`document.edit:document`"),
+            op("effect.reorder",OpKind::Edit,"Move an effect in its layer stack (one-based index).","{layer,effect,index}","object",edit_document,"`document.edit:document`"),
+            op("comp.settings",OpKind::Edit,"Change active composition dimensions, duration, frame rate or work area using engine validation.","{width?,height?,duration?,frameRate?}","object",edit_document,"`document.edit:document`"),
+
+            op("canvas.overlay.set", OpKind::Ui, "Replace this plugin's bounded viewer guides, in composition pixels; cleared after a gesture.", "{ops:[draw op]}", "null",none,"free (own overlay only)"),
+            op("marker.list",OpKind::Query,"Composition markers, including times and comments.","{}","[marker]",read_document,"`document.read:document`"),
+            op("prop.get",OpKind::Query,"Read a property and its keyframes in the captured composition.","{layer,path,time?}","{value,evaluated,keys}",read_document,"`document.read:document`"),
+            op("prop.set",OpKind::Edit,"Set a property through the engine's validated property command.","{layer,path,value,time?}","object",edit_document,"`document.edit:document`"),
+            op("prop.addKey",OpKind::Edit,"Add a keyframe; time defaults to layer seconds, timeBase may be comp.","{layer,path,value,time?,timeBase?}","object",edit_document,"`document.edit:document`"),
+            op("prop.reset",OpKind::Edit,"Reset a property.","{layer,path}","object",edit_document,"`document.edit:document`"),
+            op("effect.remove",OpKind::Edit,"Remove an effect instance by uid.","{layer,effect}","object",edit_document,"`document.edit:document`"),
+            op("layer.newSolid",OpKind::Edit,"Create a solid layer in the captured composition.","{name?,color?,width?,height?}","object",edit_document,"`document.edit:document`"),
+            op("layer.newNull",OpKind::Edit,"Create a null for motion paths and controls.","{name?}","object",edit_document,"`document.edit:document`"),
+            op("layer.select",OpKind::Edit,"Select layer ids in the captured composition.","{layers:[id]}","object",edit_document,"`document.edit:document`"),
+
             op(
                 "selection.get",
                 OpKind::Query,
@@ -132,7 +153,7 @@ fn build() -> AppContract {
                 "effect.apply",
                 OpKind::Edit,
                 "Applies an effect (built-in id such as `ec.blur.gaussian`, or `<plugin id>/<effect>`) to the selected layers, then sets the given parameters.",
-                r#"{"effect": "ec.blur.gaussian", "values": {"blurriness": 12}}"#,
+                r#"{"effect": "ec.blur.gaussian", "params": {"blurriness": 12}}"#,
                 r#"{"effects": [41], "paths": ["effects/#2"]}"#,
                 edit_selection,
                 "`document.edit:selection`",
@@ -167,6 +188,8 @@ fn build() -> AppContract {
             ),
         ],
         events: vec![
+            EventSpec { name:"tool",summary:"Pointer gesture in composition pixels at the current time; Escape cancels; one undo step per gesture.",payload:r#"{"event":"tool","phase":"begin|update|commit|cancel","at":[0,0],"time":0,"modifiers":{}}"#,needs_app_events:false },
+
             EventSpec { name: "init", summary: "Once after the plugin loads: draw your panels.", payload: r#"{"event":"init"}"#, needs_app_events: false },
             EventSpec { name: "command", summary: "A command contribution ran (one undo step).", payload: r#"{"event":"command","id":"<contribution>"}"#, needs_app_events: false },
             EventSpec {
@@ -177,13 +200,15 @@ fn build() -> AppContract {
             },
             EventSpec {
                 name: "app",
-                summary: "`selection.changed`, `time.changed` (at most 4 per second), `document.opened`, `render.finished`.",
+                summary: "`selection.changed`, `time.changed` (at most 4 per second), `document.changed` (coalesced per pump; layers, keys, markers, effects, assets/settings), `document.opened`, `render.finished`.",
                 payload: r#"{"event":"app","name":"selection.changed","payload":{"layers":[12]}}"#,
                 needs_app_events: true,
             },
             EventSpec { name: "dispose", summary: "The plugin is being turned off or reloaded.", payload: r#"{"event":"dispose"}"#, needs_app_events: false },
         ],
         slots: vec![
+            SlotSpec {kind:"tool",summary:"Select from Plugins; primary pointer draws in the composition viewer. Middle-button and Space pan, wheel zoom remain available."},
+
             SlotSpec { kind: "effect", summary: "Effects & Presets and Effect ▸ under the contribution's category (default **Plugins**); instances are ordinary effect property groups (animatable, expressions, Effect Controls)." },
             SlotSpec { kind: "command", summary: "**Plugins ▸ <plugin name> ▸ <label>**, and the command id `plugin.<plugin id>.<contribution>` for agents and the CLI." },
             SlotSpec { kind: "panel", summary: "A host-drawn panel opened from **Plugins ▸ <plugin name> ▸ <label>** (beta: a floating panel)." },
@@ -192,7 +217,7 @@ fn build() -> AppContract {
             SlotSpec { kind: "lut", summary: "Listed by `plugin.resources` (absolute `.cube` paths for Apply Color LUT's file parameter)." },
             SlotSpec { kind: "theme", summary: "Stored and listed; applied once craft-theme lands (deferred)." },
         ],
-        notes: "Tools are not supported in EffectCraft yet; tool contributions are unavailable in compatibility and setup. \
+        notes: "\
 Pixels: premultiplied RGBA f32 in the project's working space (`color` is `linear-srgb` when Linearize Working Space is on, else `srgb`); values may exceed 1 in 32 bpc projects. \
 `time` is layer time in seconds. `scale` is buffer pixels per layer pixel (previews at reduced resolution have scale < 1 and `quality: \"draft\"`). \
 `origin` is the buffer's top-left inside the layer's full frame and `full` the layer's size, both in buffer pixels. \
@@ -219,7 +244,18 @@ mod tests {
     #[test]
     fn contract_is_complete_and_renders() {
         let c = contract();
-        for op in ["selection.get", "comp.info", "layer.list", "layer.rename", "marker.add", "effect.apply", "time.get", "ui.panel.set", "ui.window.open", "ui.notify"] {
+        for op in [
+            "selection.get",
+            "comp.info",
+            "layer.list",
+            "layer.rename",
+            "marker.add",
+            "effect.apply",
+            "time.get",
+            "ui.panel.set",
+            "ui.window.open",
+            "ui.notify",
+        ] {
             assert!(c.op(op).is_some(), "{op}");
         }
         let md = c.to_markdown();
@@ -228,6 +264,31 @@ mod tests {
         if let Some(out) = std::env::var_os("EFFECTCRAFT_CONTRACT_OUT") {
             std::fs::write(out, &md).unwrap();
         }
+    }
+
+    #[test]
+    fn new_operations_are_explicit_and_scoped() {
+        for name in [
+            "prop.set",
+            "prop.addKey",
+            "prop.reset",
+            "effect.remove",
+            "effect.reorder",
+            "layer.newSolid",
+            "layer.newNull",
+            "layer.select",
+            "markers.set",
+            "markers.delete",
+            "comp.settings",
+            "time.set",
+        ] {
+            let op = contract().op(name).unwrap();
+            assert_eq!((op.requires)(&serde_json::json!({})), vec![Permission::DocumentEdit(DocScope::Document)], "{name}");
+        }
+        for name in ["project.summary", "layer.tree", "prop.get", "marker.list"] {
+            assert_eq!((contract().op(name).unwrap().requires)(&serde_json::json!({})), vec![Permission::DocumentRead(DocScope::Document)], "{name}");
+        }
+        assert!(contract().op("shell.exec").is_none());
     }
 
     #[test]

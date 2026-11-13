@@ -146,12 +146,15 @@ enum Job {
 }
 
 /// What a worker runs.
+#[derive(Clone)]
 enum Program {
     Wasm(Plugin),
     Native { plugin: ExtensionId, version: Version, exe: PathBuf, work: PathBuf },
 }
 
 struct Worker {
+    paused: Arc<AtomicBool>,
+    program: Program,
     tx: SyncSender<Job>,
 }
 
@@ -217,6 +220,14 @@ struct Surface {
     plugin_name: String,
 }
 
+struct Gesture {
+    mark: effectcraft_engine::ext::GroupMark,
+    generation: u64,
+    document: Arc<()>,
+    comp: Option<effectcraft_project::ItemId>,
+    selection: Vec<LayerId>,
+}
+
 #[derive(Default)]
 struct State {
     loaded: Vec<Loaded>,
@@ -229,11 +240,15 @@ struct State {
     presets: Vec<Preset>,
     luts: Vec<Lut>,
     store_changes: u64,
+    selected_tool: Option<SessionContribution>,
+    gesture: Option<Gesture>,
+    overlays: BTreeMap<String, Value>,
 }
 
 /// What the session last looked like, for app events.
 #[derive(Default)]
 struct Seen {
+    project: Option<std::sync::Weak<Project>>,
     selection: Vec<LayerId>,
     time: Option<f64>,
     time_sent: Option<Instant>,
@@ -399,25 +414,52 @@ impl Runtime {
             .iter()
             .map(|c| (c.worker.clone(), c.plugin.clone(), c.version, c.plugin_name.clone(), c.contribution.clone(), c.declared.clone()))
             .collect();
+        let mut initialized = Vec::new();
         for (worker, plugin, version, name, contribution, declared) in starts {
             {
                 let inv = self.invocation(&plugin, version, &contribution, &format!("Start · {name}"), declared);
                 if let Some(w) = st.workers.get(&worker) {
-                    let _ = w.tx.try_send(Job::Event {
-                        dispatch: Dispatch {
-                            document: s.plugin_document_token(),
-                            epoch: s.script_ui.project_epoch,
-                            sha256: st.loaded.iter().find(|p| p.id == plugin).and_then(|p| p.sha256.clone()),
-                            surface: None,
-                        },
-                        inv,
-                        event: json!({"event": "init"}),
-                        done: None,
-                    });
+                    let (done, finished) = mpsc::channel();
+                    if w.tx
+                        .try_send(Job::Event {
+                            dispatch: Dispatch {
+                                document: s.plugin_document_token(),
+                                epoch: s.script_ui.project_epoch,
+                                sha256: st.loaded.iter().find(|p| p.id == plugin).and_then(|p| p.sha256.clone()),
+                                surface: None,
+                            },
+                            inv,
+                            event: json!({"event": "init"}),
+                            done: Some(done),
+                        })
+                        .is_ok()
+                    {
+                        initialized.push(finished);
+                    }
                 }
             }
         }
         drop(st);
+        // CLI sessions have no frame pump. Complete init on the owner thread too, so panels
+        // have a committed tree/revision before the first UI event or query.
+        let deadline = Instant::now() + EVENT_TIMEOUT;
+        for finished in initialized {
+            loop {
+                match finished.try_recv() {
+                    Ok(Ok(())) => break,
+                    Ok(Err(e)) => {
+                        effectcraft_engine::ext::notify(s, format!("Plugin init: {e}"), true);
+                        break;
+                    }
+                    Err(mpsc::TryRecvError::Disconnected) => break,
+                    Err(mpsc::TryRecvError::Empty) => {}
+                }
+                if Instant::now() >= deadline {
+                    break;
+                }
+                self.serve(s, Duration::from_millis(20));
+            }
+        }
         s.layer_cache.clear();
     }
 
@@ -447,7 +489,7 @@ impl Runtime {
                 st.effects.push(id);
                 Ok(())
             }
-            ContributionKind::Command | ContributionKind::Panel | ContributionKind::EventHook => {
+            ContributionKind::Command | ContributionKind::Panel | ContributionKind::EventHook | ContributionKind::Tool => {
                 let worker = match &p.manifest.native {
                     Some(n) => {
                         let rel = n.executables.get(&platform()).ok_or("no native executable for this platform")?;
@@ -565,6 +607,9 @@ impl Runtime {
     }
 
     fn spawn(&self, key: &str, code: Program) -> Result<Worker, String> {
+        let saved = code.clone();
+        let paused = Arc::new(AtomicBool::new(false));
+        let worker_paused = paused.clone();
         let (tx, rx) = mpsc::sync_channel::<Job>(QUEUE);
         let context = Arc::new(Mutex::new(None));
         let api: Arc<dyn AppApi> = Arc::new(Bridge { tx: self.tx.clone(), context: context.clone() });
@@ -573,9 +618,9 @@ impl Runtime {
         let name = key.to_string();
         std::thread::Builder::new()
             .name(format!("plugin {key}"))
-            .spawn(move || worker_main(&name, code, rx, api, grants, log, context))
+            .spawn(move || worker_main(&name, code, rx, api, grants, log, context, worker_paused))
             .map_err(|e| e.to_string())?;
-        Ok(Worker { tx })
+        Ok(Worker { tx, program: saved, paused })
     }
 
     fn invocation(&self, plugin: &ExtensionId, version: Version, contribution: &str, label: &str, declared: Arc<[Permission]>) -> Invocation {
@@ -719,7 +764,12 @@ impl Runtime {
             let _ = begin.reply.send(Err(OpError::denied("this plugin has been turned off")));
             return;
         }
-        let scope = Scope { comp: s.active_comp_id(), selection: s.state.selected_layers.clone(), plugin_name };
+        let scope = {
+            let st = lock(&self.state);
+            let (comp, selection) =
+                st.gesture.as_ref().map(|g| (g.comp, g.selection.clone())).unwrap_or_else(|| (s.active_comp_id(), s.state.selected_layers.clone()));
+            Scope { comp, selection, plugin_name }
+        };
         let mark = s.begin_group();
         let selection: Vec<u64> = scope.selection.iter().map(|l| l.0).collect();
         if begin.reply.send(Ok(json!({"selection": selection}))).is_err() {
@@ -803,6 +853,9 @@ impl Runtime {
         let mut st = lock(&self.state);
         for (rev, c) in changes {
             match c {
+                UiChange::Overlay(ops) => {
+                    st.overlays.insert(plugin.to_string(), ops);
+                }
                 UiChange::Panel { panel, tree } => {
                     if let Some(sf) = st.surfaces.get_mut(&format!("{plugin}/{panel}")) {
                         sf.tree = Some(tree);
@@ -867,6 +920,7 @@ fn worker_main(
     grants: Arc<dyn Grants>,
     log: LogFn,
     context: Arc<Mutex<Option<Dispatch>>>,
+    paused: Arc<AtomicBool>,
 ) {
     enum Runner {
         Wasm(WasmSession),
@@ -912,6 +966,9 @@ fn worker_main(
                     Runner::Wasm(s) => s.dispatch(inv, &event),
                     Runner::Native(h) => h.dispatch(inv, &event),
                 };
+                if let Runner::Wasm(s) = &runner {
+                    paused.store(s.paused, Ordering::Relaxed);
+                }
                 match &r {
                     // Expected after Open/New or a reload: the event's document or grant went away.
                     Err(e @ (craft_ext_host::wasm::PluginError::Cancelled | craft_ext_host::wasm::PluginError::Failed(-5, _))) => {
@@ -1020,6 +1077,10 @@ impl Runtime {
         let mut events: Vec<Value> = Vec::new();
         {
             let mut seen = lock(&self.seen);
+            if seen.project.as_ref().and_then(std::sync::Weak::upgrade).is_none_or(|p| !Arc::ptr_eq(&p, &s.project)) {
+                seen.project = Some(Arc::downgrade(&s.project));
+                events.push(json!({"event":"app","name":"document.changed","payload":{}}));
+            }
             if seen.selection != s.state.selected_layers {
                 seen.selection = s.state.selected_layers.clone();
                 events
@@ -1069,7 +1130,7 @@ impl PluginRuntime for Runtime {
         let mut v: Vec<PluginCommand> = st
             .sessions
             .iter()
-            .filter(|c| c.kind == ContributionKind::Command)
+            .filter(|c| matches!(c.kind, ContributionKind::Command | ContributionKind::Tool))
             .map(|c| PluginCommand {
                 id: format!("plugin.{}.{}", c.plugin, c.contribution),
                 label: c.label.clone(),
@@ -1088,16 +1149,26 @@ impl PluginRuntime for Runtime {
 
     fn run_command(&self, s: &mut Session, id: &str, _params: &Value) -> effectcraft_engine::Result<Value> {
         self.sync_document(s);
+        self.tool_event(s, "cancel", [0.0, 0.0], Value::Null);
         let (preset, session) = {
             let st = lock(&self.state);
             let preset = st.presets.iter().find(|p| p.command == id).cloned();
-            let session = st.sessions.iter().find(|c| c.kind == ContributionKind::Command && format!("plugin.{}.{}", c.plugin, c.contribution) == id).cloned();
+            let session = st
+                .sessions
+                .iter()
+                .find(|c| matches!(c.kind, ContributionKind::Command | ContributionKind::Tool) && format!("plugin.{}.{}", c.plugin, c.contribution) == id)
+                .cloned();
             (preset, session)
         };
         if let Some(p) = preset {
             return self.apply_preset(s, &p);
         }
         let c = session.ok_or_else(|| EngineError::UnknownCommand(id.to_string()))?;
+        if c.kind == ContributionKind::Tool {
+            self.tool_event(s, "cancel", [0.0, 0.0], Value::Null);
+            lock(&self.state).selected_tool = Some(c);
+            return Ok(Value::Null);
+        }
         let inv = self.invocation(&c.plugin, c.version, &c.contribution, &format!("{} · {}", c.label, c.plugin_name), c.declared.clone());
         let wait = !self.interactive.load(Ordering::Relaxed);
         self.deliver(s, &c.worker, inv, json!({"event": "command", "id": c.contribution}), wait)
@@ -1112,6 +1183,7 @@ impl PluginRuntime for Runtime {
         let changes = self.grants.changes();
         let stale = lock(&self.state).store_changes != changes;
         if stale {
+            self.tool_event(s, "cancel", [0.0, 0.0], Value::Null);
             self.unload("This effect's plugin was turned off or changed.");
             self.load(s);
         }
@@ -1123,7 +1195,105 @@ impl PluginRuntime for Runtime {
             effectcraft_engine::ext::notify(s, format!("Plugin: {e}"), true);
         }
         self.serve(s, Duration::ZERO);
-        self.app_events(s);
+        if lock(&self.state).gesture.is_none() {
+            self.app_events(s);
+        }
+    }
+
+    fn paused(&self) -> Vec<String> {
+        let st = lock(&self.state);
+        st.sessions
+            .iter()
+            .filter(|c| st.workers.get(&c.worker).is_some_and(|w| w.paused.load(Ordering::Relaxed)))
+            .map(|c| c.plugin.to_string())
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect()
+    }
+    fn selected_tool(&self) -> Option<String> {
+        lock(&self.state).selected_tool.as_ref().map(|c| format!("plugin.{}.{}", c.plugin, c.contribution))
+    }
+
+    fn overlays(&self) -> Vec<Value> {
+        lock(&self.state).overlays.values().cloned().collect()
+    }
+
+    fn resume(&self, s: &mut Session, id: &str) -> Result<(), String> {
+        let jobs: Vec<_> = {
+            let st = lock(&self.state);
+            let keys: BTreeSet<_> = st.sessions.iter().filter(|c| c.plugin.as_str() == id).map(|c| c.worker.clone()).collect();
+            keys.into_iter().filter_map(|key| st.workers.get(&key).map(|w| (key, w.program.clone()))).collect()
+        };
+        if jobs.is_empty() {
+            return Err("plugin is not loaded".into());
+        }
+        self.tool_event(s, "cancel", [0.0, 0.0], Value::Null);
+        for (key, program) in jobs {
+            let worker = self.spawn(&key, program)?;
+            if let Some(old) = lock(&self.state).workers.insert(key, worker) {
+                let _ = old.tx.try_send(Job::Stop);
+            }
+        }
+        let contributions: Vec<_> = lock(&self.state).sessions.iter().filter(|c| c.plugin.as_str() == id).cloned().collect();
+        for c in contributions {
+            let inv = self.invocation(&c.plugin, c.version, &c.contribution, &c.label, c.declared.clone());
+            self.deliver(s, &c.worker, inv, json!({"event":"init"}), true)?;
+        }
+        Ok(())
+    }
+
+    fn tool_event(&self, s: &mut Session, phase: &str, at: [f64; 2], modifiers: Value) {
+        let Some(c) = lock(&self.state).selected_tool.clone() else { return };
+        if !["begin", "update", "commit", "cancel"].contains(&phase) || at.iter().any(|v| !v.is_finite()) {
+            return;
+        }
+        if phase == "begin" {
+            if lock(&self.state).gesture.is_some() {
+                return;
+            }
+            lock(&self.state).gesture = Some(Gesture {
+                mark: s.begin_group(),
+                generation: self.grants.generation(&c.plugin),
+                document: s.plugin_document_token(),
+                comp: s.active_comp_id(),
+                selection: s.state.selected_layers.clone(),
+            });
+        }
+        let generation = lock(&self.state).gesture.as_ref().map(|g| g.generation);
+        let same_document = lock(&self.state).gesture.as_ref().is_none_or(|g| Arc::ptr_eq(&g.document, &s.plugin_document_token()));
+        if !same_document {
+            let mut st = lock(&self.state);
+            st.gesture = None;
+            st.selected_tool = None;
+            st.overlays.clear();
+            return;
+        }
+        let Some(generation) = generation else {
+            if phase == "cancel" {
+                lock(&self.state).selected_tool = None;
+            }
+            return;
+        };
+        let valid = !self.grants.stopped(&c.plugin, c.version) && self.grants.generation(&c.plugin) == generation;
+        let result = if valid {
+            let inv = self.invocation(&c.plugin, c.version, &c.contribution, &c.label, c.declared.clone());
+            self.deliver(s, &c.worker, inv, json!({"event":"tool","phase":phase,"at":at,"time":s.time().seconds(),"modifiers":modifiers}), true)
+        } else {
+            Err("permissions changed".into())
+        };
+        if phase == "commit" || phase == "cancel" || result.is_err() {
+            let gesture = lock(&self.state).gesture.take();
+            if let Some(gesture) = gesture {
+                let commit =
+                    phase == "commit" && result.is_ok() && self.grants.generation(&c.plugin) == generation && !self.grants.stopped(&c.plugin, c.version);
+                s.finish_group(gesture.mark, &format!("{} · {}", c.label, c.plugin_name), commit);
+            }
+            let mut st = lock(&self.state);
+            st.overlays.clear();
+            if phase == "cancel" || result.is_err() {
+                st.selected_tool = None;
+            }
+        }
     }
 
     fn surfaces(&self) -> Vec<PluginSurface> {
@@ -1142,6 +1312,7 @@ impl PluginRuntime for Runtime {
     }
 
     fn ui_event(&self, s: &mut Session, key: &str, rev: u64, widget: &str, value: Value) {
+        self.tool_event(s, "cancel", [0.0, 0.0], Value::Null);
         let target = {
             let st = lock(&self.state);
             st.surfaces.get(key).filter(|sf| sf.rev == rev).map(|sf| {
@@ -1285,6 +1456,40 @@ mod regression_tests {
             reply: mpsc::channel().0,
             sent: Instant::now(),
         }
+    }
+
+    #[test]
+    fn revoked_gesture_rolls_back_all_phases_and_overlay() {
+        let dir = tempfile::tempdir().unwrap();
+        let rt = Runtime::new(dir.path().to_path_buf(), false).unwrap();
+        let mut s = Session::default();
+        s.execute("comp.new", json!({})).unwrap();
+        let before = s.project.clone();
+        let history = s.history.undo.len();
+        let mark = s.begin_group();
+        s.execute("layer.newNull", json!({"name":"preview"})).unwrap();
+        {
+            let mut st = lock(&rt.state);
+            st.selected_tool = Some(SessionContribution {
+                plugin: ExtensionId::new("org.example.tool").unwrap(),
+                version: Version::parse("1.0.0").unwrap(),
+                plugin_name: "Test".into(),
+                contribution: "tool".into(),
+                label: "Tool".into(),
+                kind: ContributionKind::Tool,
+                category: None,
+                worker: "missing".into(),
+                declared: Arc::from([]),
+            });
+            st.gesture = Some(Gesture { mark, generation: 0, document: s.plugin_document_token(), comp: s.active_comp_id(), selection: vec![] });
+            st.overlays.insert("org.example.tool".into(), json!([]));
+        }
+        // No enabled release: the gesture was revoked before this pointer update.
+        rt.tool_event(&mut s, "commit", [10., 20.], json!({}));
+        assert!(Arc::ptr_eq(&before, &s.project));
+        assert_eq!(s.history.undo.len(), history);
+        assert!(rt.selected_tool().is_none());
+        assert!(rt.overlays().is_empty());
     }
 
     #[test]

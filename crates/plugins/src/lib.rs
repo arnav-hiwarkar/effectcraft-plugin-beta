@@ -123,6 +123,17 @@ mod native {
     /// `effectcraft-cli plugin …`. `plugin contract` prints the contract reference; everything else
     /// goes to the shared `plugin` command library. Returns the exit code.
     pub fn run_cli(args: &[String], out: &mut dyn std::io::Write, err: &mut dyn std::io::Write) -> i32 {
+        if args.first().is_some_and(|a| a == "resume") {
+            let Some(id) = args.get(1) else {
+                let _ = writeln!(err, "usage: plugin resume <id>");
+                return 2;
+            };
+            let _ = writeln!(
+                out,
+                "{id}: pauses last only for the current session. New CLI sessions start unpaused. In a running session execute plugin.resume with {{\"id\":\"{id}\"}}; desktop: Plugins > Resume."
+            );
+            return 0;
+        }
         if args.first().is_some_and(|a| a == "contract") {
             return match write!(out, "{}", crate::contract::contract().to_markdown()) {
                 Ok(()) => 0,

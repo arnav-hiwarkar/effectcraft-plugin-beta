@@ -46,6 +46,20 @@ pub struct PluginSurface {
 /// session; plugin code itself runs on workers and reaches the document only through
 /// [`PluginRuntime::pump`].
 pub trait PluginRuntime: Send + Sync {
+    fn paused(&self) -> Vec<String> {
+        Vec::new()
+    }
+    fn selected_tool(&self) -> Option<String> {
+        None
+    }
+    fn overlays(&self) -> Vec<Value> {
+        Vec::new()
+    }
+    fn tool_event(&self, _s: &mut Session, _phase: &str, _at: [f64; 2], _modifiers: Value) {}
+    fn resume(&self, _s: &mut Session, _id: &str) -> std::result::Result<(), String> {
+        Err("resume unavailable".into())
+    }
+
     /// Commands of enabled contributions.
     fn commands(&self) -> Vec<PluginCommand>;
     /// Runs a plugin command (one transaction, one undo step).
@@ -249,8 +263,27 @@ fn ui_event(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(Value::Null)
 }
 
+fn resume(s: &mut Session, p: &Value) -> Result<Value> {
+    let id = p.get("id").and_then(Value::as_str).ok_or_else(|| crate::commands::bad("plugin.resume", "missing id"))?;
+    runtime(s, "plugin.resume")?.resume(s, id).map_err(EngineError::Other)?;
+    Ok(Value::Null)
+}
+fn tool_event(s: &mut Session, p: &Value) -> Result<Value> {
+    let phase = p
+        .get("phase")
+        .and_then(Value::as_str)
+        .filter(|p| ["begin", "update", "commit", "cancel"].contains(p))
+        .ok_or_else(|| crate::commands::bad("plugin.toolEvent", "invalid phase"))?;
+    let at = p.get("at").and_then(Value::as_array).filter(|a| a.len() == 2).ok_or_else(|| crate::commands::bad("plugin.toolEvent", "at must be [x,y]"))?;
+    let x = at.first().and_then(Value::as_f64).filter(|v| v.is_finite()).ok_or_else(|| crate::commands::bad("plugin.toolEvent", "invalid x"))?;
+    let y = at.get(1).and_then(Value::as_f64).filter(|v| v.is_finite()).ok_or_else(|| crate::commands::bad("plugin.toolEvent", "invalid y"))?;
+    runtime(s, "plugin.toolEvent")?.tool_event(s, phase, [x, y], p.get("modifiers").cloned().unwrap_or(Value::Null));
+    Ok(Value::Null)
+}
 pub(crate) fn specs() -> Vec<CommandSpec> {
     vec![
+        cmd!("plugin.resume", "Resume Plugin", [], None, "{id}", crate::commands::always, resume),
+        cmd!("plugin.toolEvent", "Plugin Tool Event", [], None, "{phase,at:[x,y],modifiers?}", crate::commands::always, tool_event),
         crate::query!(
             "plugin.list",
             "List Plugins",

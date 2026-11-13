@@ -23,6 +23,10 @@ pub const MAX_SPECS: usize = 4096;
 
 /// Renders one external effect. Runs on render threads, possibly several at once.
 pub trait ExternalRender: Send + Sync {
+    fn form_json(&self, _values: &crate::Params, _size: [f64; 2]) -> Option<serde_json::Value> {
+        None
+    }
+
     fn preset_value(&self, _key: &str, value: &serde_json::Value, _size: [f64; 2]) -> Result<serde_json::Value, String> {
         Ok(value.clone())
     }
@@ -340,4 +344,10 @@ pub fn absolute_point(ps: &ParamSpec) -> bool {
 
 pub fn preset_value(id: &str, key: &str, value: &serde_json::Value, size: [f64; 2]) -> Result<serde_json::Value, String> {
     renderer(id).map_or_else(|| Ok(value.clone()), |r| r.preset_value(key, value, size))
+}
+
+/// Form metadata for a live external effect, without coupling the effects crate to the guest schema.
+pub fn form_json(id: &str, values: &crate::Params, size: [f64; 2]) -> Option<serde_json::Value> {
+    let r = registry().read().unwrap_or_else(PoisonError::into_inner);
+    r.entries.get(id)?.render.as_ref()?.form_json(values, size)
 }

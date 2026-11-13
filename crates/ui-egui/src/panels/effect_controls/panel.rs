@@ -399,6 +399,27 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                 }
             }
             let scope = FxScope { effect: effect.as_str(), root: g, path: String::new() };
+            let params = effectcraft_engine::effects::Params { values: g.props().map(|pr| (pr.match_id.clone(), ectx.value(&layer, pr))).collect() };
+            let size = [comp.width as f64, comp.height as f64];
+            if let Some(tree) = effectcraft_engine::effects::external::form_json(effect, &params, size) {
+                let region = Rect::from_min_max(pos2(body.min.x + 10.0, y), pos2(body.max.x - 10.0, body.max.y.max(y + 1.0)));
+                let key = format!("effect-form-{}-{}", layer.id.0, g.uid);
+                let changed = ui
+                    .scope_builder(egui::UiBuilder::new().max_rect(region), |ui| {
+                        let events = crate::plugins_ui::effect_form(app, ui, &key, &tree);
+                        y = ui.min_rect().max.y;
+                        events
+                    })
+                    .inner;
+                for (param, value) in changed {
+                    if let Some(pr) = g.props().find(|p| p.match_id == param) {
+                        if let Ok(value) = effectcraft_engine::effects::external::preset_value(effect, &param, &value, size) {
+                            actions.push(("prop.set".into(), json!({"layer":layer.id.0,"prop":pr.uid,"value":value})));
+                        }
+                    }
+                }
+            }
+            // Native property rows retain stopwatches, key navigation, expressions and property selection.
             group_rows(app, ui, &bp, &layer, g, &ectx, body, &mut y, 0, &scope, &mut actions);
             if effect == "ec.color.tint" {
                 let r = Rect::from_min_size(pos2(body.min.x + PARAM_NAME_X, y + 2.0), vec2(120.0, ROW));

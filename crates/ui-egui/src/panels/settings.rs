@@ -76,7 +76,7 @@ fn page_ui(app: &mut EffectcraftApp, ui: &mut egui::Ui, page: &Page, cur: &Value
             Item::Models(task) => models_ui(app, ui, t, acts, task),
             Item::Plugins => {
                 #[cfg(not(target_arch = "wasm32"))]
-                crate::plugins_ui::manager_page(ui);
+                crate::plugins_ui::manager_page(app, ui);
                 #[cfg(target_arch = "wasm32")]
                 ui.label(RichText::new(tr("Plugins are available in the desktop app.")).color(t.text_dim));
             }

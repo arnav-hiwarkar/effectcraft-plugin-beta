@@ -59,17 +59,16 @@ catalogue implementation have been removed. Old packages need a schema-2
   denies all rights and stops work until the store can be read again.
 - Native workers supervise idle helpers every 500 ms, withdrawing consent
   promptly even with no queued events.
-- Tool contributions are unavailable: "Tools are not supported in EffectCraft yet";
-  the adapter reports that reason through shared compatibility/manager status.
-- **CONFORMANCE:** runtime, hostile modules, revocation races, GUI interaction,
-  native-helper shutdown, undo/redo and project round trips need execution.
-  Focused plugin and shared-core tests cover operation recovery, fail-closed
-  grants, project references and document suppression; no app runs were used.
+- Tool contributions are supported by session contract 1.1 (see below).
+- **CONFORMANCE:** desktop interaction, hostile-module coverage and native-helper
+  shutdown still need broader execution. Adapter tests cover rollback, scopes,
+  malformed trees, grants, project references and suppression. The session smoke
+  script exercises installed Wasm panels/tools/effects, save/reopen, undo/cancel
+  and frame exports (see plugin-testing.md).
 - Shared beta deferrals still apply: theme activation, native effects/pixel
   transport, temporal access, tiling, TUF and process leases.
 
-The shared contract reference is transcribed from `contract().to_markdown()`'s
-format and the adapter declarations, without building or executing a generator.
+The shared contract reference is generated from `contract().to_markdown()`.
 
 ## Scoped validation
 
@@ -136,3 +135,33 @@ Panels render Form nodes with conditional widgets and retained editing state;
 unknown Component nodes render their fallback. Preset effect entries now use
 `{ "effect": "…", "values": { "key": value } }`, with typed values and choice IDs.
 No migration or compatibility path for the removed contribution params is provided.
+
+## Session contract 1.1
+
+The app keeps one shared `craft_ext_ui::plugin_ui::PluginUi` for panels,
+windows and effect forms. Settings ▸ Plugins chooses the host engine (Egui by
+default; Framework currently falls back to Egui). Plugins cannot choose it.
+Native effect property rows remain available for animation and expressions.
+
+Tool contributions select from Plugins. Primary pointer gestures send begin,
+update, commit and cancel in composition pixels, with the current time and
+modifiers. Escape cancels. The gesture captures composition/selection and grant
+generation, folds edits into one undo entry, and rolls back on failure or
+revocation. Middle-button and Space pan and wheel navigation retain the viewer's
+host implementation. `plugin.toolEvent` drives the same runtime from the CLI.
+Paused wasm workers appear with Resume in Settings ▸ Plugins.
+`plugin.resume {id}` restarts that package's session workers and sends init.
+`effectcraft-cli plugin resume <id>` explains that pauses are session-local.
+
+The generated contract lists the new operations and permission rules. Document
+grants never authorize arbitrary file access: property/effect writes accept only
+numeric, boolean and numeric-vector values. File-valued properties are excluded
+until picked-file tokens are implemented.
+
+Capability audit: layers (list, rename, solid/null/text/shape creation, switches, select and property tree),
+timeline (time query/set), keyframes (property read/add), markers
+(list/add/set/delete), effects (apply/remove/reorder), composition creation/settings, existing assets as layers and
+project/asset metadata are exposed. Asset import and render/export from a plugin
+remain unavailable: they need a host-picked-file API before they can safely
+accept destinations/sources. They remain available to the person through the
+app and CLI. No raw OS, process or shell operation is exposed.

@@ -188,6 +188,12 @@ impl FilterEffect {
 }
 
 impl ExternalRender for FilterEffect {
+    fn form_json(&self, values: &effectcraft_effects::Params, size: [f64; 2]) -> Option<serde_json::Value> {
+        let form = self.form.as_ref()?;
+        let values = form_values(form, values, size).ok()?;
+        Some(serde_json::json!({"type":"form","form":form,"values":values}))
+    }
+
     fn preset_value(&self, key: &str, value: &Value, size: [f64; 2]) -> Result<Value, String> {
         let form = self.form.as_ref().ok_or("effect has no form")?;
         let p = form.params.iter().find(|p| p.key == key).ok_or("unknown form parameter")?;

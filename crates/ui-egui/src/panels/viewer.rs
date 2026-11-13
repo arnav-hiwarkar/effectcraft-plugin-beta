@@ -221,8 +221,48 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     phase_rigs(app, ui, &ectx, &mut v);
     let resp = phase_menu(app, ui, &ectx, &mut v);
     phase_hover(app, ui, &ectx, &resp, &mut v);
-    phase_press(app, ui, &ectx, &resp, &mut v);
-    if !middle_pan(app, ui, &resp, &v) {
+    v.space_pan = super::space_hand(&v.ctx);
+    v.mods = ui.input(|i| i.modifiers);
+    let plugin_tool = app.session.plugins.clone().filter(|rt| rt.selected_tool().is_some());
+    if let Some(rt) = &plugin_tool {
+        if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+            rt.tool_event(&mut app.session, "cancel", [0.0, 0.0], json!({}));
+        }
+        if !v.space_pan {
+            let phase = if resp.drag_started_by(egui::PointerButton::Primary) {
+                Some("begin")
+            } else if resp.drag_stopped_by(egui::PointerButton::Primary) {
+                Some("commit")
+            } else if resp.dragged_by(egui::PointerButton::Primary) {
+                Some("update")
+            } else {
+                None
+            };
+            if resp.clicked_by(egui::PointerButton::Primary) {
+                if let Some(pos) = resp.interact_pointer_pos() {
+                    let at = v.map.to_comp(pos);
+                    rt.tool_event(&mut app.session, "begin", at, json!({}));
+                    rt.tool_event(&mut app.session, "commit", at, json!({}));
+                }
+            } else if let (Some(phase), Some(pos)) = (phase, resp.interact_pointer_pos()) {
+                rt.tool_event(
+                    &mut app.session,
+                    phase,
+                    v.map.to_comp(pos),
+                    json!({"shift":v.mods.shift,"alt":v.mods.alt,"ctrl":v.mods.ctrl,"command":v.mods.command}),
+                );
+            }
+        }
+        for ops in rt.overlays() {
+            if let Ok(ops) = serde_json::from_value::<Vec<craft_ext_core::ui::tree::DrawOp>>(ops) {
+                craft_ext_ui::plugin_ui::paint_ops(&v.painter, craft_ext_ui::plugin_ui::Xf::new(v.map.origin, v.map.zoom), v.area, &ops, &|_| None);
+            }
+        }
+    }
+    if plugin_tool.is_none() || v.space_pan {
+        phase_press(app, ui, &ectx, &resp, &mut v);
+    }
+    if !middle_pan(app, ui, &resp, &v) && (plugin_tool.is_none() || v.space_pan) {
         phase_dragstart(app, ui, &ectx, &resp, &mut v);
         phase_drag(app, ui, &ectx, &resp, &mut v);
         phase_stopped(app, ui, &ectx, &resp, &mut v);
@@ -1947,15 +1987,18 @@ fn phase_tail(app: &mut EffectcraftApp, ui: &mut egui::Ui, ectx: &EvalCtx, v: &m
     let ctx = v.ctx.clone();
     let painter = v.painter.clone();
     let comp = v.comp;
-    // 3D Camera Tracker points, targets and their menu (on top of the viewer's gestures while
-    // the effect is selected), and its analysis banner.
-    super::camera_tracker_ui::viewer_hook(app, ui, &painter, &map, ectx, &|c, l| l2c(c, l).0);
-    // Effect point controls and crosshair/eyedropper picks (on top of the viewer's gestures).
-    crate::panels::effect_controls::viewer_hook(app, ui, &painter, &map, ectx, &|c, l| l2c(c, l).0);
-    // Selected shape gradients' start and end points (#612).
-    crate::panels::gradient_handles::viewer_hook(app, ui, &painter, &map, ectx, &|c, l| l2c(c, l).0);
-    // Selected text Range Selectors' Start and End bars (#1011).
-    crate::panels::text_range_handles::viewer_hook(app, ui, &painter, &map, ectx, &|c, l| l2c(c, l).0);
+    // Plugin tools own primary gestures; native effect handles must not edit under them.
+    if app.session.plugins.as_ref().is_none_or(|rt| rt.selected_tool().is_none()) {
+        // 3D Camera Tracker points, targets and their menu (on top of the viewer's gestures while
+        // the effect is selected), and its analysis banner.
+        super::camera_tracker_ui::viewer_hook(app, ui, &painter, &map, ectx, &|c, l| l2c(c, l).0);
+        // Effect point controls and crosshair/eyedropper picks (on top of the viewer's gestures).
+        crate::panels::effect_controls::viewer_hook(app, ui, &painter, &map, ectx, &|c, l| l2c(c, l).0);
+        // Selected shape gradients' start and end points (#612).
+        crate::panels::gradient_handles::viewer_hook(app, ui, &painter, &map, ectx, &|c, l| l2c(c, l).0);
+        // Selected text Range Selectors' Start and End bars (#1011).
+        crate::panels::text_range_handles::viewer_hook(app, ui, &painter, &map, ectx, &|c, l| l2c(c, l).0);
+    }
 
     // Status chips (render time / caching).
     // The caching chip stays up a moment after the last wait, so gaps between uncached frames

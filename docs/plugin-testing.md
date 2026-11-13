@@ -160,3 +160,58 @@ $B plugin contract | diff - $ROOT/craft-extensions/docs/plugins/contracts/effect
 - Safe mode (`--safe-mode` or `EFFECTCRAFT_SAFE_MODE=1`) loads no plugin code.
 - GUI flows were not exercised by automated tests in this round (no display); the CLI drives the
   same engine commands.
+
+## Session 1.1 examples
+
+The EffectCraft-only examples are in `craft-extensions/examples/`:
+`effectcraft-cue-board` (tabs, marker table, canvas and top-layer rename),
+`effectcraft-point-tool` (position keyframes and viewer guides), and
+`effectcraft-channel-tint` (conditional form, boolean/range/color controls).
+
+For each directory run `craft-ext build --release`, `craft-ext check`, and
+`craft-ext test`. The last command tests effects deterministically; it reports
+no automated panel/tool tests, so it does **not** prove those interactions.
+
+Use `craft-ext dev <directory> --app effectcraft`, then point
+`CRAFT_EXT_DIR` at the returned development store. Enable `main` and grant the
+listed permissions with `effectcraft-cli plugin setup <id> --all --grant …`.
+
+In a running CLI session select the point tool with
+`plugin.io.github.arnav-hiwarkar.effectcraft-point-tool.main {}`, then send
+`plugin.toolEvent {"phase":"begin","at":[4,8]}` and
+`plugin.toolEvent {"phase":"commit","at":[20,24]}`.
+`prop.get {"layer":"Solid","path":"transform/position"}` must show the new
+keyframe. One `edit.undo {}` must restore its prior keys. Repeat with
+`cancel` and with permission revocation between phases: no edits or guides
+may remain. Export a small frame with `render-frame --out result.png`.
+
+Desktop checks: select the tool from Plugins; drag and release to keyframe.
+Escape cancels. Middle-drag and Space-drag pan, and wheel zoom works.
+Open the cue board, add a cue, rename the top layer and undo each action.
+Apply Channel tint and toggle its conditional color/protection fields.
+Stopwatches and expressions remain in the native property rows below the form.
+A wasm plugin trapping three times must show Resume in Settings ▸ Plugins;
+resuming restarts its workers and redraws its panel.
+
+## Verified session 1.1 run
+
+Linux debug builds of `effectcraft` and `effectcraft-cli` passed.
+`cargo test -p effectcraft-plugins --lib`: 18 passed.
+Shared `cargo test -p craft-ext-cli`: 11 passed, one maintainer-publication
+test ignored. All Cargo commands used the workspace lock and four build jobs.
+
+All three new examples passed release Wasm build and author check/test commands.
+The tint effect passed the deterministic pixel test; panel/tool author tests
+explicitly report that they have no automatic interaction coverage.
+
+Run `scripts/plugin-session-smoke.sh` after building the examples and debug CLI.
+It installs with `craft-ext dev` into a fresh development store, grants each
+declared permission, opens the cue panel using its actual revision, and asserts
+saved markers and keyframes, one-step undo, cancellation, effect-stack undo,
+and PNG exports with different tinted output. This script passed.
+The adapter tests additionally cover revocation rolling back all gesture phases.
+
+Initialization is served synchronously with a deadline when loading sessions:
+CLI panel queries therefore see committed trees without a GUI frame pump.
+Desktop clicks, navigation and the three-trap Resume button have not been
+visually exercised. Native property rows remain beneath shared effect forms.
