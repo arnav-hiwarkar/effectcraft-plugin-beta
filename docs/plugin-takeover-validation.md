@@ -14,7 +14,7 @@ The original session expansion is documented in [plugin-migration.md](plugin-mig
 
 ## Executed checks
 
-All Cargo checks use `CARGO_BUILD_JOBS=4 flock /home/ash/projects/plugin-beta/.cargo.lock`.
+All Cargo checks use `CARGO_BUILD_JOBS=4 flock $ROOT/.cargo.lock`.
 
 | Command | Result |
 |---|---|
