@@ -109,6 +109,7 @@ mod tests {
         std::fs::write(&path, bytes).unwrap();
         assert!(grants.allowed(&id, &Permission::UiWindow));
         assert!(grants.full_access(&id));
-        assert!(grants.changes() >= 3);
+        // Becoming unreadable and recovering each count; re-reading an unchanged store does not.
+        assert_eq!(grants.changes(), 2);
     }
 }
