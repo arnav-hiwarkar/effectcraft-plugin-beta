@@ -133,7 +133,10 @@ $B --project base.ecproj run layer.select '{"layers":["Grey"]}' effect.apply '{"
 $B --project lut.ecproj set - Grey effects/#1/lut "\"$LUT\"" --save
 $B --project lut.ecproj render-frame --out lut.png       # warm grey
 $B plugin updates; $B plugin update $F                    # 1.1.0, enablement kept
+$B --project lut.ecproj render-frame --out lut-updated.png
 $B plugin rollback $F 1.0.0
+$B --project lut.ecproj render-frame --out lut-rollback.png
+# lut.ecproj keeps plugin://…; both reopen operations resolve the active release.
 ```
 
 GUI: **Plugins ▸ Film looks ▸ Halftone print** applies the preset to the selected layers as one
@@ -152,8 +155,8 @@ $B plugin contract | diff - $ROOT/craft-extensions/docs/plugins/contracts/effect
   per-pixel fuel budget, and every render then fails with "the plugin took too long".
 - Halftone renders single-threaded in the interpreter: about 17 s for a 1920×1080 frame in this
   debug app build. Use small comps or Draft/Half resolution for interactive testing.
-- A saved Apply Color LUT path points into the release directory of the version that was
-  active; after update/rollback and pruning, re-pick the LUT.
+- Plugin LUTs use `plugin://<id>/<contribution>/<file>` references and resolve to the active
+  release after update/rollback. Missing plugins retain the reference and final renders name the needed plugin.
 - Safe mode (`--safe-mode` or `EFFECTCRAFT_SAFE_MODE=1`) loads no plugin code.
 - GUI flows were not exercised by automated tests in this round (no display); the CLI drives the
   same engine commands.

@@ -377,7 +377,24 @@ pub fn lut_files(src: &str) -> Vec<String> {
 /// Load (and cache) a LUT from inline `.cube` text or a file path. A file is stamped (one
 /// `metadata` call) on every load and read again once its size or modification time moved (see
 /// [`crate::file_cache`]); inline text is its own content.
+type ResourceResolver = fn(&str) -> Result<String, String>;
+static RESOURCE_RESOLVER: std::sync::RwLock<Option<ResourceResolver>> = std::sync::RwLock::new(None);
+pub fn set_resource_resolver(resolver: ResourceResolver) {
+    *RESOURCE_RESOLVER.write().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(resolver);
+}
+pub fn resolve_resource(reference: &str) -> Result<String, String> {
+    if !reference.starts_with("plugin://") {
+        return Ok(reference.into());
+    }
+    RESOURCE_RESOLVER
+        .read()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .ok_or_else(|| format!("needs plugin {}", reference.trim_start_matches("plugin://").split('/').next().unwrap_or_default()))?(reference)
+}
 pub fn load_lut(src: &str) -> Option<Arc<Lut>> {
+    if src.starts_with("plugin://") {
+        return load_lut(&resolve_resource(src).ok()?);
+    }
     if src.trim().is_empty() {
         return None;
     }

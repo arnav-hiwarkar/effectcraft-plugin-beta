@@ -539,7 +539,12 @@ impl Runtime {
                     if !path.is_file() {
                         return Err(format!("{f} is missing"));
                     }
-                    st.luts.push(Lut { plugin: p.id.clone(), contribution: c.id.clone(), label: c.label.clone(), path });
+                    st.luts.push(Lut {
+                        plugin: p.id.clone(),
+                        contribution: c.id.clone(),
+                        label: c.label.clone(),
+                        path: PathBuf::from(format!("plugin://{}/{}/{f}", p.id, c.id)),
+                    });
                 }
                 Ok(())
             }

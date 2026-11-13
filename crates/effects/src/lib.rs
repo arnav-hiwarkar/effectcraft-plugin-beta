@@ -26,10 +26,10 @@ pub mod crypto_select;
 #[cfg(test)]
 mod display_names;
 mod distort;
-pub mod external;
 mod distort2;
 mod distort3;
 pub mod distort4;
+pub mod external;
 pub mod face_track;
 pub mod fidelity;
 mod generate;
@@ -131,7 +131,7 @@ pub use sim2::{
     CausticsSetup, FoamDisc, FoamEnv, FoamPlan, Piece, PiecePlan, PieceTex, PixelPlan, WavePlan, Waves, caustics_setup, foam_full_plan, piece_plan, pixel_plan,
     wave_world_plan,
 };
-pub use utility::{Lut, load_lut, lut_file, lut_files, lut_params};
+pub use utility::{Lut, load_lut, lut_file, lut_files, lut_params, resolve_resource, set_resource_resolver};
 pub use vr::{equi_dir as vr_equi_dir, rotation as vr_rotation};
 
 /// Effect categories in Effects & Presets order.

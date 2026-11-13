@@ -171,6 +171,20 @@ pub fn missing_rendering_effects(project: &Project) -> Vec<(String, String)> {
 
 /// The final-render refusal for [`missing_rendering_effects`], naming the install command.
 pub fn missing_effects_error(project: &Project) -> Option<String> {
+    for (_, comp) in project.comps() {
+        for layer in &comp.layers {
+            for group in layer.effects().into_iter().flat_map(|fx| fx.groups()) {
+                for prop in group.props() {
+                    if let effectcraft_project::Value::Str(reference) = &prop.value
+                        && reference.starts_with("plugin://")
+                        && let Err(reason) = effectcraft_effects::resolve_resource(reference)
+                    {
+                        return Some(reason);
+                    }
+                }
+            }
+        }
+    }
     let missing = missing_rendering_effects(project);
     if missing.is_empty() {
         return None;

@@ -48,6 +48,9 @@ mod native {
     /// Installs the plugin runtime in `s` and loads the enabled contributions. In `safe` mode no
     /// plugin code runs, but the manager and project checks work. Later sessions share the runtime.
     pub fn start(s: &mut Session, safe: bool) {
+        effectcraft_effects::set_resource_resolver(|reference| {
+            manager()?.resolve_resource(reference).map(|p| p.to_string_lossy().into_owned()).map_err(|e| e.to_string())
+        });
         let mut slot = slot().lock().unwrap_or_else(PoisonError::into_inner);
         if let Some(rt) = slot.as_ref() {
             s.plugins = Some(rt.clone());
