@@ -47,12 +47,15 @@ catalogue implementation have been removed. Old packages need a schema-2
   contract, state_version and opaque state, with downgrade placeholders. Project
   package readiness now checks recorded contribution state versions; per-instance
   opaque state remains deferred.
-- **B4-DISPOSE:** deliver a bounded dispose event before stopping workers; current
-  unload unregisters effects and queues Stop, without a guest dispose callback.
-- **B4-WORKER-ORDER:** wasm workers are per plugin/module. Separate modules in
-  one package do not share a package-wide event ordering queue.
-- **B5-WINDOW-LIMIT:** surface commit silently skips excess floating windows;
-  return a budget error before acknowledging a fifth window.
+- **B4-DISPOSE (deferred):** unload unregisters effects and stops workers immediately,
+  without calling guest code. Revocation must not wait for guest cleanup. The
+  reserved dispose event is not a beta delivery guarantee.
+- **B4-WORKER-ORDER (specified):** workers serialize events per plugin/module; the
+  document thread serializes transactions. Separate modules have no package-wide
+  ordering or shared guest state guarantee. Authors must not depend on one.
+- **B5-WINDOW-LIMIT (source fixed):** window calls count existing and staged unique
+  windows and return a budget error before acknowledging a fifth. Replacing a
+  window keeps its slot. The commit guard remains defensive. Runtime unverified.
 - Catalogue/kill-list refresh runs for the app lifetime every six hours, with
   failure retries after 5 minutes, 30 minutes, then 2 hours. Published store
   changes reload contributions on the next pump. An unreadable grant refresh

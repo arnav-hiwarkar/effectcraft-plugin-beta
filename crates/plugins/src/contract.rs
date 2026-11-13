@@ -204,7 +204,7 @@ fn build() -> AppContract {
                 payload: r#"{"event":"app","name":"selection.changed","payload":{"layers":[12]}}"#,
                 needs_app_events: true,
             },
-            EventSpec { name: "dispose", summary: "The plugin is being turned off or reloaded.", payload: r#"{"event":"dispose"}"#, needs_app_events: false },
+            EventSpec { name: "dispose", summary: "Reserved lifecycle event; beta unload and revocation stop workers immediately without guest notification.", payload: r#"{"event":"dispose"}"#, needs_app_events: false },
         ],
         slots: vec![
             SlotSpec {kind:"tool",summary:"Select from Plugins; primary pointer draws in the composition viewer. Middle-button and Space pan, wheel zoom remain available."},

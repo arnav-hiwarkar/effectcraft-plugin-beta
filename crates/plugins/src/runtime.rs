@@ -46,6 +46,17 @@ const QUEUE: usize = 64;
 const MAX_WINDOWS: usize = 4;
 const MAX_DATA_BYTES: u64 = 4 * 1024 * 1024;
 
+fn window_fits(existing: impl Iterator<Item = String>, staged: &[(u64, UiChange)], plugin: &ExtensionId, id: &str) -> bool {
+    let mut windows: std::collections::BTreeSet<String> = existing.collect();
+    for (_, change) in staged {
+        if let UiChange::Window { id, .. } = change {
+            windows.insert(format!("{plugin}/{id}"));
+        }
+    }
+    windows.insert(format!("{plugin}/{id}"));
+    windows.len() <= MAX_WINDOWS
+}
+
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     m.lock().unwrap_or_else(PoisonError::into_inner)
 }
@@ -815,6 +826,16 @@ impl Runtime {
                     let out = match ops::run(s, &scope, &op, args, &own_panels) {
                         Ok(Outcome::Value(v)) => Ok(v),
                         Ok(Outcome::Ui(change)) => {
+                            if let UiChange::Window { id, .. } = &change {
+                                let st = lock(&self.state);
+                                let existing = st.surfaces.iter()
+                                    .filter(|(_, surface)| surface.window && surface.plugin == begin.plugin)
+                                    .map(|(key, _)| key.clone());
+                                if !window_fits(existing, &ui, &begin.plugin, id) {
+                                    let _ = r.reply.send(Err(OpError::new(Code::Budget, "At most four windows per plugin")));
+                                    continue;
+                                }
+                            }
                             let rev = self.next_rev.fetch_add(1, Ordering::Relaxed);
                             ui.push((rev, change));
                             Ok(json!({"rev": rev}))
@@ -1477,6 +1498,17 @@ mod regression_tests {
             reply: mpsc::channel().0,
             sent: Instant::now(),
         }
+    }
+
+    #[test]
+    fn window_budget_counts_staged_windows_and_allows_replacement() {
+        let plugin = ExtensionId::new("io.test.windows").unwrap();
+        let existing = || ["a", "b", "c"].into_iter().map(|id| format!("{plugin}/{id}"));
+        let staged = vec![(1, UiChange::Window { id: "d".into(), title: "D".into(), tree: json!({"type":"label","text":"D"}) })];
+        assert!(window_fits(existing(), &[], &plugin, "d"));
+        assert!(window_fits(existing(), &staged, &plugin, "d"));
+        assert!(window_fits(existing(), &staged, &plugin, "a"));
+        assert!(!window_fits(existing(), &staged, &plugin, "e"));
     }
 
     #[test]
