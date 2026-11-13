@@ -15,6 +15,9 @@ impl Session {
             return guard::guarded(&format!("plugin command `{id}`"), || rt.run_command(self, id, &params));
         }
         let spec = commands::find(id).ok_or_else(|| EngineError::UnknownCommand(id.to_string()))?;
+        if self.refused_during_gesture(id, spec.journal) {
+            return Err(EngineError::Other("a plugin tool gesture is in progress; finish or cancel it first".into()));
+        }
         if let Err(why) = (spec.enabled)(self) {
             // Explicit targets (agents, scripts) don't need a UI selection.
             let explicit = (["layer", "layers", "prop", "keys"].iter().any(|k| params.get(k).is_some()) && commands::has_comp(self).is_ok())

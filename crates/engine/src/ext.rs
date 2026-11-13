@@ -56,6 +56,10 @@ pub trait PluginRuntime: Send + Sync {
         Vec::new()
     }
     fn tool_event(&self, _s: &mut Session, _phase: &str, _at: [f64; 2], _modifiers: Value) {}
+    /// Whether a plugin tool gesture holds an open edit group (other edits must wait for it).
+    fn gesture_active(&self) -> bool {
+        false
+    }
     fn resume(&self, _s: &mut Session, _id: &str) -> std::result::Result<(), String> {
         Err("resume unavailable".into())
     }
@@ -95,6 +99,17 @@ impl Session {
     }
 
     /// The plugin runtime when `id` is a plugin command it knows.
+    /// A plugin tool gesture owns one open edit group until it commits or cancels. Another edit (an
+    /// Undo, a menu command, an agent) would be folded into it on commit or lost on cancel, so only
+    /// queries, view navigation and plugin commands run meanwhile.
+    pub(crate) fn refused_during_gesture(&self, id: &str, journaled: bool) -> bool {
+        journaled
+            && !id.starts_with("view.")
+            && !id.starts_with("plugin.")
+            && !id.starts_with("plugins.")
+            && self.plugins.as_ref().is_some_and(|rt| rt.gesture_active())
+    }
+
     pub(crate) fn plugin_command(&self, id: &str) -> Option<Arc<dyn PluginRuntime>> {
         if !id.starts_with("plugin.") || crate::commands::find(id).is_some() {
             return None;

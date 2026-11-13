@@ -146,8 +146,24 @@ impl AppApi for Bridge {
     fn finish(&self, inv: &Invocation, commit: bool) {
         if let Err(e) = self.ask(inv, Kind::Finish(commit)) {
             log::warn!("plugin {}: finishing the event failed: {e}", inv.plugin);
+            // The host trait cannot return this; the worker reads it so the event reports failure.
+            FINISH_ERROR.with(|f| *f.borrow_mut() = Some(e.to_string()));
         }
         CAPTURED_SELECTION.with(|s| s.borrow_mut().clear());
+    }
+}
+
+thread_local! {
+    /// Why the current event's transaction did not commit, set by [`Bridge::finish`] on the worker
+    /// thread (wasm and native both finish there) and taken when the event's result is reported.
+    static FINISH_ERROR: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
+}
+
+/// An event that ran but whose transaction was rolled back must not be reported as finished.
+fn event_result<T, E: std::fmt::Display>(r: Result<T, E>, finish_error: Option<String>) -> Result<T, String> {
+    match (r, finish_error) {
+        (Ok(_), Some(e)) => Err(format!("the plugin's changes were undone: {e}")),
+        (r, _) => r.map_err(|e| e.to_string()),
     }
 }
 
@@ -276,6 +292,9 @@ pub struct Runtime {
     /// Set by the first [`PluginRuntime::pump`]: a frontend serves requests every frame, so
     /// commands return at once instead of blocking.
     interactive: AtomicBool,
+    /// Set while a plugin's own operation runs on the owner thread: its engine commands are the
+    /// gesture's edits and must not be refused as outside edits.
+    serving: AtomicBool,
     state: Mutex<State>,
     requests: Mutex<Receiver<Request>>,
     tx: Sender<Request>,
@@ -318,6 +337,7 @@ impl Runtime {
             grants: Arc::new(StoreGrants::new(view, root, app)),
             safe,
             interactive: AtomicBool::new(false),
+            serving: AtomicBool::new(false),
             state: Mutex::new(State::default()),
             requests: Mutex::new(rx),
             tx,
@@ -725,7 +745,9 @@ impl Runtime {
                     let _ = r.reply.send(Err(OpError::new(Code::Stale, "no event is open")));
                 }
                 Kind::Finish(_) => {
-                    let _ = r.reply.send(Ok(Value::Null));
+                    // Its transaction already ended (a failed check, timeout or nested Begin rolled
+                    // it back), so the event did not commit.
+                    let _ = r.reply.send(Err(OpError::new(Code::Stale, "the event was already rolled back")));
                 }
             }
         }
@@ -823,7 +845,10 @@ impl Runtime {
                         let _ = r.reply.send(Err(e));
                         continue;
                     }
-                    let out = match ops::run(s, &scope, &op, args, &own_panels) {
+                    self.serving.store(true, Ordering::Relaxed);
+                    let ran = ops::run(s, &scope, &op, args, &own_panels);
+                    self.serving.store(false, Ordering::Relaxed);
+                    let out = match ran {
                         Ok(Outcome::Value(v)) => Ok(v),
                         Ok(Outcome::Ui(change)) => {
                             if let UiChange::Window { id, .. } = &change {
@@ -990,6 +1015,7 @@ fn worker_main(
         match job {
             Job::Event { dispatch, inv, event, done } => {
                 *lock(&context) = Some(dispatch);
+                FINISH_ERROR.with(|f| f.borrow_mut().take());
                 let r = match &mut runner {
                     Runner::Wasm(s) => s.dispatch(inv, &event),
                     Runner::Native(h) => h.dispatch(inv, &event),
@@ -1005,8 +1031,12 @@ fn worker_main(
                     Err(e) => log::warn!("plugin {name}: {e}"),
                     Ok(_) => {}
                 }
+                let r = event_result(r, FINISH_ERROR.with(|f| f.borrow_mut().take()));
+                if let Err(e) = &r {
+                    log::debug!("plugin {name}: {e}");
+                }
                 if let Some(d) = done {
-                    let _ = d.send(r.map_err(|e| e.to_string()));
+                    let _ = d.send(r);
                 }
             }
             Job::Stop => break,
@@ -1153,6 +1183,9 @@ impl Runtime {
 }
 
 impl PluginRuntime for Runtime {
+    fn gesture_active(&self) -> bool {
+        !self.serving.load(Ordering::Relaxed) && lock(&self.state).gesture.is_some()
+    }
     fn commands(&self) -> Vec<PluginCommand> {
         let st = lock(&self.state);
         let mut v: Vec<PluginCommand> = st
@@ -1606,6 +1639,26 @@ mod regression_tests {
         assert!(rt.selected_tool().is_none());
     }
 
+    #[test]
+    fn edits_wait_while_a_plugin_gesture_is_open() {
+        let dir = tempfile::tempdir().unwrap();
+        let rt = Arc::new(Runtime::new(dir.path().to_path_buf(), false).unwrap());
+        let mut s = Session::default();
+        s.execute("comp.new", json!({})).unwrap();
+        s.execute("layer.newNull", json!({"name":"before"})).unwrap();
+        s.plugins = Some(rt.clone());
+        let mark = s.begin_group();
+        lock(&rt.state).gesture =
+            Some(Gesture { mark, generation: 0, document: s.plugin_document_token(), comp: s.active_comp_id(), selection: vec![] });
+        // Undo or another edit would be folded into (or lost with) the gesture's single step.
+        assert!(s.execute("edit.undo", json!({})).unwrap_err().to_string().contains("gesture"));
+        assert!(s.execute("layer.newNull", json!({})).is_err());
+        // Queries still answer.
+        assert!(s.execute("comp.info", json!({})).is_ok());
+        lock(&rt.state).gesture = None;
+        assert!(s.execute("edit.undo", json!({})).is_ok());
+    }
+
     /// Traps on `command` events (byte 10 of `{"event":"command"…}` is `c`), succeeds on `init`.
     const TRAP_ON_COMMAND: &str = r#"(module
       (memory (export "memory") 2)
@@ -1920,6 +1973,13 @@ label = "Test"
         lock(&rt.state).surfaces.get_mut(&key).unwrap().rev = 2;
         let error = rt.validate_request(&s, &r).err().unwrap();
         assert_eq!(error.code, Code::Stale);
+    }
+
+    #[test]
+    fn rolled_back_events_are_reported_as_failures() {
+        assert_eq!(event_result::<(), String>(Ok(()), None), Ok(()));
+        assert!(event_result::<(), String>(Ok(()), Some("revoked".into())).unwrap_err().contains("undone: revoked"));
+        assert_eq!(event_result::<(), String>(Err("trap".into()), Some("x".into())), Err("trap".into()));
     }
 
     #[test]
