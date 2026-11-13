@@ -178,11 +178,11 @@ pub fn missing_effects_error(project: &Project) -> Option<String> {
     let mut plugins: Vec<&str> = missing.iter().map(|(_, p)| p.as_str()).collect();
     plugins.dedup();
     let effects: Vec<&str> = missing.iter().map(|(e, _)| e.as_str()).collect();
-    let install: Vec<String> = plugins.iter().map(|p| format!("effectcraft-cli plugin install {p}")).collect();
+    let install: Vec<String> = plugins.iter().map(|p| format!("effectcraft-cli plugin install {p}` then `effectcraft-cli plugin setup {p} --all")).collect();
     Some(format!(
-        "this project uses effects from plugins that are not installed or are turned off ({}); the render would differ, so it was not started. Install and enable them (Settings ▸ Plugins, or `{}`)",
+        "this project uses effects from plugins that are not installed, are turned off, or were stopped (withdrawn, kill-listed or changed) ({}); the render would differ, so it was not started. Install and enable them (Settings ▸ Plugins, or `{}`); `effectcraft-cli plugin project <file>` explains each one",
         effects.join(", "),
-        install.join("`, `")
+        install.join("`; `")
     ))
 }
 

@@ -907,8 +907,13 @@ fn worker_main(
                     Runner::Wasm(s) => s.dispatch(inv, &event),
                     Runner::Native(h) => h.dispatch(inv, &event),
                 };
-                if let Err(e) = &r {
-                    log::warn!("plugin {name}: {e}");
+                match &r {
+                    // Expected after Open/New or a reload: the event's document or grant went away.
+                    Err(e @ (craft_ext_host::wasm::PluginError::Cancelled | craft_ext_host::wasm::PluginError::Failed(-5, _))) => {
+                        log::debug!("plugin {name}: {e}")
+                    }
+                    Err(e) => log::warn!("plugin {name}: {e}"),
+                    Ok(_) => {}
                 }
                 if let Some(d) = done {
                     let _ = d.send(r.map_err(|e| e.to_string()));

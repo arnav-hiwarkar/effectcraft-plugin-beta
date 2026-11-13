@@ -108,6 +108,15 @@ provenance immediately. A different loaded release cannot upgrade or render thes
 instances silently: install the recorded release, or explicitly migrate a copy of
 the project and its saved parameters/provenance. Automatic migration is not performed.
 
+## Beta runs (2026-11-13)
+
+The CLI flows in [plugin-testing.md](plugin-testing.md) were run against the local signed test
+catalogue: refresh/search/install/setup/enable; halftone applied, rendered, exported, edited,
+saved and reopened; disable/remove/kill-list refusals and reinstall; color-notes command and panel
+event with the optional permission denied (recoverable) and granted (one undo step per event);
+film-looks presets and LUT, update 1.0.0 → 1.1.0 and rollback; `plugin contract` against the
+shared contract page. GUI interaction, revocation races and hostile modules remain unrun.
+
 ## Form schema v1
 
 Contribution controls now come from `contribution.form` (or the validated optional

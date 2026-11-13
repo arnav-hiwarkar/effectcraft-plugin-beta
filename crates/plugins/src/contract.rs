@@ -192,11 +192,22 @@ fn build() -> AppContract {
             SlotSpec { kind: "lut", summary: "Listed by `plugin.resources` (absolute `.cube` paths for Apply Color LUT's file parameter)." },
             SlotSpec { kind: "theme", summary: "Stored and listed; applied once craft-theme lands (deferred)." },
         ],
-        notes: "Tools are not supported in EffectCraft yet. Pixels: premultiplied RGBA f32 in the project's working space (`color` is `linear-srgb` when Linearize Working Space is on, else `srgb`); values may exceed 1 in 32 bpc projects. \
+        notes: "Tools are not supported in EffectCraft yet; tool contributions are unavailable in compatibility and setup. \
+Pixels: premultiplied RGBA f32 in the project's working space (`color` is `linear-srgb` when Linearize Working Space is on, else `srgb`); values may exceed 1 in 32 bpc projects. \
 `time` is layer time in seconds. `scale` is buffer pixels per layer pixel (previews at reduced resolution have scale < 1 and `quality: \"draft\"`). \
 `origin` is the buffer's top-left inside the layer's full frame and `full` the layer's size, both in buffer pixels. \
-Point parameters: defaults are fractions of the layer size ([0.5, 0.5] = centre); values reach the filter in buffer pixels. Angle parameters are degrees. Select parameters are 0-based indices. \
-Plugin effects are treated as time-dependent by the frame caches. Ops act on the composition and selection captured when the event started. Effect ids are `<plugin id>/<contribution>`.",
+Plugin effects are treated as time-dependent by the frame caches. Ops act on the composition and selection captured when the event started. Effect ids are `<plugin id>/<contribution>`.
+
+## Effect forms (schema 1)
+
+`contribution.form` supplies the effect controls; optional `craft_describe` supplies a validated runtime form. \
+Form parameter keys identify render `params` values. Choice/radio values are option IDs, colors straight RGBA, angles degrees, \
+and points use their declared image-percent or layer-pixels space (not buffer pixels). Effect Controls shows units and section \
+headings and evaluates visible/enabled conditions. Optional `craft_update` runs with the shared event budget; patches are validated \
+atomically and resulting value edits share one undo step. Visibility and enablement overrides are transient per-instance UI state.
+
+Panel Form nodes render host widgets with parameter-key events. Component nodes currently always render their fallback. \
+Preset effect entries use `{effect, values}`.",
     }
 }
 

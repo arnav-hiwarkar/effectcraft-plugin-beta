@@ -141,6 +141,9 @@ fn rgba(c: [f32; 4]) -> egui::Color32 {
 }
 
 /// Draws one validated tree; widget changes are pushed to `out` as (widget id, value).
+///
+/// This is the only place panel trees are rendered ([`show`] calls it per open surface): swapping
+/// in the craft-framework renderer later means replacing this one function with the same inputs.
 fn node_ui(app: &mut EffectcraftApp, ui: &mut egui::Ui, key: &str, rev: u64, n: &Node, out: &mut Vec<(String, Value)>) {
     let auto = |app: &mut EffectcraftApp, id: &str, r: &egui::Response, label: &str| app.auto.add(&format!("plugin.{key}.{id}"), r.rect, label);
     match n {
