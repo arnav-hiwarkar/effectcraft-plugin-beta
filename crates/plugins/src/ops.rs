@@ -82,6 +82,7 @@ fn numeric_value(v: &Value) -> bool {
 /// String properties hold file paths (Apply Color LUT's `.cube`); reads never return their values.
 fn redact_strings(v: &mut Value, depth: usize) {
     if depth > 64 {
+        *v = Value::Null;
         return;
     }
     match v {
@@ -263,6 +264,14 @@ mod tests {
         assert!(numeric_value(&json!([1, 2, 3, 4])));
         assert!(!numeric_value(&json!([1, 2, 3, 4, 5])));
     }
+    #[test]
+    fn deeply_nested_document_properties_fail_closed() {
+        let mut value = json!({"type":"string","value":"/secret/grade.cube"});
+        for _ in 0..66 { value = json!({"child":value}); }
+        redact_strings(&mut value, 0);
+        assert!(!value.to_string().contains("secret"));
+    }
+
     #[test]
     fn document_reads_never_return_file_paths() {
         let mut s = Session::default();

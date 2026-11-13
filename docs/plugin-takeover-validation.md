@@ -25,3 +25,7 @@ All Cargo checks use `CARGO_BUILD_JOBS=4 flock /home/ash/projects/plugin-beta/.c
 ## Remaining gates
 
 Current app/CLI rebuild, real-example smoke rerun, desktop interaction and macOS/Windows checks are pending. The tests above prove adapter regressions, not GUI behavior or all sandbox protections. GitHub Actions and releases await user permission after final verification.
+
+## Source-only follow-up
+
+Deeply nested document-property redaction now fails closed by replacing over-depth branches with null. A regression test was added, but the follow-up suite has no confirmed result after the tool outage. The 22-test pass above predates this small follow-up. Future builds and broad suites are deferred; use source review and only cheap scoped checks.
