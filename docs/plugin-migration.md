@@ -76,8 +76,8 @@ format and the adapter declarations, without building or executing a generator.
 Scoped Linux checks: `cargo check -p effectcraft-effects` (native and
 `--target wasm32-unknown-unknown`), `effectcraft-engine`, `effectcraft-plugins`,
 `effectcraft-ui-egui`, `effectcraft-host`, and `effectcraft-cli`, one at a time.
-`cargo test -p effectcraft-plugins` passes all 11 tests, including the point-default
-assertion and the new regression tests. Shared hooks were checked with
+`cargo test -p effectcraft-plugins` passes all 13 tests, including declared point spaces, typed form values, atomic
+patch rejection, and a reset patch sharing one undo step with another value edit. Shared hooks were checked with
 `cargo check -p craft-ext-core -p craft-ext-ui --tests`; `cargo test -p craft-ext-core`
 passes all 42 tests. No app runs, full builds, clippy or workspace gates were run.
 
@@ -107,3 +107,23 @@ with contribution ids and state schema versions. Applying a new effect records i
 provenance immediately. A different loaded release cannot upgrade or render these
 instances silently: install the recorded release, or explicitly migrate a copy of
 the project and its saved parameters/provenance. Automatic migration is not performed.
+
+## Form schema v1
+
+Contribution controls now come from `contribution.form` (or the validated optional
+`craft_describe` export). Parameters use `key`, `label` Words and a nested `kind`.
+Range, int and number controls use sliders; bool uses a checkbox; choice/radio use
+popups whose stored form values are option IDs. Units appear beside labels and
+sections appear as headings. EffectCraft keeps popup indices internally and maps
+these to IDs at the plugin boundary. Colors cross that boundary as RGBA, angles as
+degrees, and points as declared image percentages or full layer pixels, independent
+of buffer scale and origin. Layer-pixel defaults are never multiplied by layer size.
+
+Effect Controls evaluates visible/enabled conditions from current property values.
+A property change calls the optional budgeted `craft_update`, validates its patch
+against the form and revision, and groups value edits into one undo step. Hide/show
+and enable/disable are transient instance UI state; parameter data remains intact.
+Panels render Form nodes with conditional widgets and retained editing state;
+unknown Component nodes render their fallback. Preset effect entries now use
+`{ "effect": "…", "values": { "key": value } }`, with typed values and choice IDs.
+No migration or compatibility path for the removed contribution params is provided.

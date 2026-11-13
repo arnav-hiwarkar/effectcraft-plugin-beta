@@ -132,7 +132,7 @@ fn build() -> AppContract {
                 "effect.apply",
                 OpKind::Edit,
                 "Applies an effect (built-in id such as `ec.blur.gaussian`, or `<plugin id>/<effect>`) to the selected layers, then sets the given parameters.",
-                r#"{"effect": "ec.blur.gaussian", "params": {"blurriness": 12}}"#,
+                r#"{"effect": "ec.blur.gaussian", "values": {"blurriness": 12}}"#,
                 r#"{"effects": [41], "paths": ["effects/#2"]}"#,
                 edit_selection,
                 "`document.edit:selection`",

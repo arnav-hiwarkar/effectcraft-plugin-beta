@@ -678,6 +678,18 @@ impl<'a> FxScope<'a> {
             }
             None
         };
+        let mut values = effectcraft_engine::effects::Params::default();
+        for pr in root.props() {
+            values.values.insert(pr.match_id.clone(), ectx.value(layer, pr));
+        }
+        if !effectcraft_engine::effects::external::controls(self.effect, root.uid, m, &values, {
+            let (w, h) = effectcraft_engine::render::source_size(ectx.project, layer);
+            [w as f64, h as f64]
+        })
+        .0
+        {
+            return false;
+        }
         effectcraft_engine::effects::catalog::param_shown(self.effect, &format!("{}{m}", self.path), &value)
     }
 }
@@ -730,16 +742,32 @@ pub(super) fn group_rows(
                 if matches!(pr.ui, ParamUi::Hidden) || pr.three_d_only && !layer.is_3d() || !fx.shown(layer, ectx, &pr.match_id) {
                     continue;
                 }
+                if effectcraft_engine::effects::external::heading(fx.effect, &pr.match_id) {
+                    if r.intersects(rect) {
+                        p.text(r.left_center(), Align2::LEFT_CENTER, &pr.name, egui::FontId::proportional(13.0), ui.visuals().text_color());
+                    }
+                    *y += ROW;
+                    continue;
+                }
                 *y += ROW;
                 let indent = PARAM_NAME_X - 13.0 + TREE_INDENT * depth as f32;
                 let visible = !(r.max.y < rect.min.y || r.min.y > rect.max.y);
+                let mut values = effectcraft_engine::effects::Params::default();
+                for prop in fx.root.props() {
+                    values.values.insert(prop.match_id.clone(), ectx.value(layer, prop));
+                }
+                let enabled = effectcraft_engine::effects::external::controls(fx.effect, fx.root.uid, &pr.match_id, &values, {
+                    let (w, h) = effectcraft_engine::render::source_size(ectx.project, layer);
+                    [w as f64, h as f64]
+                })
+                .1;
                 if visible {
                     app.auto.add(&format!("effectControls.row.{}", pr.uid), r, &pr.name);
-                    let dims = prop_row(app, ui, p, layer, g, pr, ectx, r, indent, actions);
+                    let dims = ui.add_enabled_ui(enabled, |ui| prop_row(app, ui, p, layer, g, pr, ectx, r, indent, actions)).inner;
                     // A Timeline pick whip can be dropped here (After Effects).
                     crate::panels::timeline::whip_target(ui.ctx(), r.intersect(rect), layer.id.0, pr.uid, dims);
                 }
-                if app.ui.fx_slider_open.contains(&pr.uid) {
+                if enabled && app.ui.fx_slider_open.contains(&pr.uid) {
                     if matches!(pr.ui, ParamUi::Angle) {
                         let sr = Rect::from_min_size(pos2(rect.min.x, *y), vec2(rect.width(), DIAL_ROW));
                         *y += DIAL_ROW;

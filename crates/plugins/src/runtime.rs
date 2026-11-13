@@ -426,6 +426,8 @@ impl Runtime {
             ContributionKind::Effect => {
                 let module = self.module(p, dir, c)?;
                 let id = format!("{}/{}", p.id, c.id);
+                let form = module.describe(self.log.clone(), &|| Ok(())).map_err(|e| e.to_string())?.or_else(|| c.form.clone());
+                let params = form.as_ref().map(|f| f.params.clone()).unwrap_or_default();
                 let render = FilterEffect {
                     key: format!("{}@{}/{}", p.id, p.version, c.id).into(),
                     plugin: p.id.clone(),
@@ -433,12 +435,14 @@ impl Runtime {
                     contribution: c.id.clone(),
                     required: c.permissions.clone(),
                     module,
-                    params: c.params.clone(),
+                    params: params.clone(),
+                    form,
+                    states: Mutex::new(Default::default()),
                     grants: self.grants.clone(),
                     log: self.log.clone(),
                 };
                 let category = c.category.clone().unwrap_or_else(|| "Plugins".into());
-                effectcraft_engine::effects::external::register(&id, &c.label, &category, c.params.iter().map(param_spec).collect(), Arc::new(render))?;
+                effectcraft_engine::effects::external::register(&id, &c.label, &category, params.iter().map(param_spec).collect(), Arc::new(render))?;
                 effectcraft_engine::effects::external::set_identity(&id, p.version.to_string(), p.sha256.clone(), c.state_version);
                 st.effects.push(id);
                 Ok(())
@@ -514,7 +518,7 @@ impl Runtime {
                             .into_iter()
                             .flatten()
                             .take(32)
-                            .filter_map(|e| Some((e["effect"].as_str()?.to_string(), e["params"].as_object().cloned().unwrap_or_default())))
+                            .filter_map(|e| Some((e["effect"].as_str()?.to_string(), e["values"].as_object().cloned().unwrap_or_default())))
                             .collect();
                         st.presets.push(Preset {
                             command: format!("plugin.{}.{}.{pid}", p.id, c.id),
@@ -978,9 +982,12 @@ impl Runtime {
                 let layers = s.state.selected_layers.clone();
                 let paths: Vec<String> = r["paths"].as_array().into_iter().flatten().filter_map(|v| v.as_str().map(str::to_string)).collect();
                 for (layer, path) in layers.iter().zip(&paths) {
-                    for (k, v) in params.iter().take(64) {
-                        if local(k) {
-                            s.execute("prop.set", json!({"layer": layer.0, "path": format!("{path}/{k}"), "value": v}))?;
+                    for (k, v) in params.iter().take(craft_ext_core::form::MAX_PARAMS) {
+                        if !k.is_empty() && k.len() <= 64 && k.bytes().all(|c| c.is_ascii_alphanumeric() || b"_-".contains(&c)) {
+                            let size = s.active_comp().and_then(|c| c.layer(*layer)).map(|l| effectcraft_engine::render::source_size(&s.project, l));
+                            let size = size.map_or([1.0, 1.0], |(w, h)| [w as f64, h as f64]);
+                            let value = effectcraft_engine::effects::external::preset_value(effect, k, v, size).map_err(EngineError::Other)?;
+                            s.execute("prop.set", json!({"layer": layer.0, "path": format!("{path}/{k}"), "value": value}))?;
                         }
                     }
                 }
@@ -1234,7 +1241,7 @@ impl PluginRuntime for Runtime {
             .presets
             .iter()
             .map(|p| {
-                let effects: Vec<Value> = p.effects.iter().map(|(e, params)| json!({"effect": e, "params": params})).collect();
+                let effects: Vec<Value> = p.effects.iter().map(|(e, params)| json!({"effect": e, "values": params})).collect();
                 json!({"plugin": p.plugin.as_str(), "contribution": p.contribution, "id": p.id, "label": p.label, "command": p.command, "effects": effects})
             })
             .collect();

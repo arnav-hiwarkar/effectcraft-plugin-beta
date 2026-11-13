@@ -144,6 +144,104 @@ fn rgba(c: [f32; 4]) -> egui::Color32 {
 fn node_ui(app: &mut EffectcraftApp, ui: &mut egui::Ui, key: &str, rev: u64, n: &Node, out: &mut Vec<(String, Value)>) {
     let auto = |app: &mut EffectcraftApp, id: &str, r: &egui::Response, label: &str| app.auto.add(&format!("plugin.{key}.{id}"), r.rect, label);
     match n {
+        Node::Component { fallback, .. } => node_ui(app, ui, key, rev, fallback, out),
+        Node::Form { form, values } => {
+            use craft_ext_core::form::{ParamKind as K, Value as V};
+            let mut current = form.defaults();
+            current.extend(values.clone());
+            for param in &form.params {
+                if param.visible_when.as_ref().is_some_and(|c| !c.eval(&current)) {
+                    continue;
+                }
+                let enabled = param.enabled_when.as_ref().is_none_or(|c| c.eval(&current));
+                let id = egui::Id::unique(("plugin-form-edit", key, &form.key, &param.key));
+                let source = current.get(&param.key).cloned();
+                let (mut edit, old_source, focused, old_rev) =
+                    ui.ctx().data_mut(|d| d.get_temp::<(Option<V>, Option<V>, bool, u64)>(id)).unwrap_or((source.clone(), source.clone(), false, rev));
+                if !focused && (source != old_source || old_rev != rev) {
+                    edit = source.clone();
+                }
+                let mut active = false;
+                let mut submit = false;
+                let label = match &param.unit {
+                    Some(u) => format!("{} ({})", param.label.english, form_unit_label(u)),
+                    None => param.label.english.clone(),
+                };
+                ui.add_enabled_ui(enabled, |ui| {
+                    ui.push_id((key, &form.key, &param.key), |ui| {
+                        let response = match (&param.kind, &mut edit) {
+                            (K::Section, _) => {
+                                ui.heading(&label);
+                                None
+                            }
+                            (K::Bool { .. }, Some(V::Bool(v))) => Some(ui.checkbox(v, &label)),
+                            (K::Range { min, max, step, .. }, Some(V::Number(v))) => {
+                                let mut slider = egui::Slider::new(v, *min..=*max).text(&label);
+                                if let Some(step) = step {
+                                    slider = slider.step_by(*step);
+                                }
+                                Some(ui.add(slider))
+                            }
+                            (K::Int { min, max, .. }, Some(V::Number(v))) => {
+                                Some(ui.add(egui::Slider::new(v, *min as f64..=*max as f64).integer().text(&label)))
+                            }
+                            (K::Number { min, max, .. }, Some(V::Number(v))) => {
+                                Some(ui.add(egui::DragValue::new(v).range(min.unwrap_or(f64::MIN)..=max.unwrap_or(f64::MAX)).prefix(format!("{label}: "))))
+                            }
+                            (K::Angle { .. }, Some(V::Number(v))) => Some(ui.add(egui::DragValue::new(v).suffix("°").prefix(format!("{label}: ")))),
+                            (K::Choice { options, .. } | K::Radio { options, .. }, Some(V::String(v))) => {
+                                let before = v.clone();
+                                let r = egui::ComboBox::from_id_salt("choice")
+                                    .selected_text(options.iter().find(|o| o.id == *v).map(|o| o.label.english.as_str()).unwrap_or(""))
+                                    .show_ui(ui, |ui| {
+                                        for o in options {
+                                            ui.selectable_value(v, o.id.clone(), &o.label.english);
+                                        }
+                                    })
+                                    .response;
+                                submit = *v != before;
+                                Some(r)
+                            }
+                            (K::Text { multiline, .. }, Some(V::String(v))) => {
+                                ui.label(&label);
+                                Some(if *multiline { ui.text_edit_multiline(v) } else { ui.text_edit_singleline(v) })
+                            }
+                            (K::Color { .. }, Some(V::Color(v))) => {
+                                ui.label(&label);
+                                Some(ui.color_edit_button_rgba_unmultiplied(v))
+                            }
+                            (K::Point { .. }, Some(V::Point(v))) => {
+                                ui.label(&label);
+                                let mut r = None;
+                                for n in v {
+                                    let q = ui.add(egui::DragValue::new(n));
+                                    submit |= q.changed();
+                                    active |= q.has_focus() || q.dragged();
+                                    r = Some(q);
+                                }
+                                r
+                            }
+                            _ => None,
+                        };
+                        if let Some(r) = response {
+                            auto(app, &param.key, &r, &label);
+                            active |= r.has_focus() || r.dragged();
+                            submit |=
+                                r.drag_stopped() || r.lost_focus() || (r.changed() && (!active || matches!(param.kind, K::Bool { .. } | K::Color { .. })));
+                        }
+                    });
+                });
+                if enabled
+                    && submit
+                    && edit != source
+                    && let Some(v) = &edit
+                {
+                    current.insert(param.key.clone(), v.clone());
+                    out.push((param.key.clone(), serde_json::to_value(v).unwrap_or(Value::Null)));
+                }
+                ui.ctx().data_mut(|d| d.insert_temp(id, (edit, if active { old_source } else { source }, active, if active { old_rev } else { rev })));
+            }
+        }
         Node::Column { children } => {
             ui.vertical(|ui| children.iter().for_each(|c| node_ui(app, ui, key, rev, c, out)));
         }
@@ -272,5 +370,17 @@ fn node_ui(app: &mut EffectcraftApp, ui: &mut egui::Ui, key: &str, rev: u64, n: 
                 out.push((id.clone(), json!({"kind": kind, "at": [pos.x - o.x, pos.y - o.y]})));
             }
         }
+    }
+}
+
+fn form_unit_label(unit: &craft_ext_core::form::Unit) -> &str {
+    use craft_ext_core::form::Unit;
+    match unit {
+        Unit::Pixels => "px",
+        Unit::Percent => "%",
+        Unit::Degrees => "°",
+        Unit::Seconds => "s",
+        Unit::Frames => "frames",
+        Unit::Custom(s) => s,
     }
 }

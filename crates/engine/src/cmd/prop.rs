@@ -473,6 +473,76 @@ fn toggle_key_selected(s: &mut Session, p: &Value) -> Result<Value> {
 
 fn set(s: &mut Session, p: &Value) -> Result<Value> {
     let (cid, lid, uid) = prop_ref(s, p, "prop.set")?;
+    fn owner(g: &effectcraft_project::PropGroup, uid: u64, depth: usize) -> Option<&effectcraft_project::PropGroup> {
+        if depth > 64 {
+            return None;
+        }
+        if matches!(g.kind, effectcraft_project::GroupKind::Effect { .. }) && g.find(uid).is_some() {
+            return Some(g);
+        }
+        g.groups().find_map(|g| owner(g, uid, depth + 1))
+    }
+    let pending = if let Some(layer) = s.project.comp(cid).and_then(|c| c.layer(lid)) {
+        if let Some(g) = owner(&layer.props, uid, 0) {
+            if let effectcraft_project::GroupKind::Effect { effect } = &g.kind {
+                if crate::effects::external::find(effect).is_some() {
+                    let time = snapped_key_time(s, cid, lid, p, "prop.set")?.unwrap_or_else(|| layer.layer_time(s.time_of(cid)));
+                    let mut values = crate::effects::Params::default();
+                    for pr in g.props() {
+                        values.values.insert(pr.match_id.clone(), pr.value_at(time));
+                    }
+                    let pr = g.find(uid).ok_or_else(|| bad("prop.set", "property vanished"))?;
+                    let v = p.get("value").ok_or_else(|| bad("prop.set", "missing value"))?;
+                    let nv = pr.value_at(time).coerce_json(v).ok_or_else(|| bad("prop.set", "invalid value"))?;
+                    values.values.insert(pr.match_id.clone(), nv);
+                    let (w, h) = effectcraft_render::source_size(&s.project, layer);
+                    let result = crate::effects::external::update(effect, g.uid, &values, [w as f64, h as f64]).map_err(EngineError::Other)?;
+                    Some(
+                        g.props()
+                            .filter_map(|pr| {
+                                result.values.get(&pr.match_id).filter(|v| pr.uid == uid || **v != pr.value_at(time)).map(|v| (pr.uid, v.to_json()))
+                            })
+                            .collect::<Vec<_>>(),
+                    )
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+    let Some(changes) = pending else { return set_inner(s, p) };
+    let mark = s.begin_group();
+    let result = (|| {
+        let mut out = set_inner(s, p)?;
+        for (target, value) in changes {
+            if target == uid && p.get("value") == Some(&value) {
+                continue;
+            }
+            let mut q = p.clone();
+            if let Some(o) = q.as_object_mut() {
+                o.remove("path");
+                o.insert("prop".into(), json!(target));
+                o.insert("value".into(), value);
+            }
+            let reply = set_inner(s, &q)?;
+            if target == uid {
+                out = reply;
+            }
+        }
+        Ok(out)
+    })();
+    s.finish_group(mark, "Change Plugin Form", result.is_ok());
+    result
+}
+
+fn set_inner(s: &mut Session, p: &Value) -> Result<Value> {
+    let (cid, lid, uid) = prop_ref(s, p, "prop.set")?;
     // Position with Separate Dimensions: write the X/Y/Z Position properties instead.
     if let Some(l) = s.project.comp(cid).and_then(|c| c.layer(lid))
         && let Some(tr) = l.transform()

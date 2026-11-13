@@ -23,6 +23,21 @@ pub const MAX_SPECS: usize = 4096;
 
 /// Renders one external effect. Runs on render threads, possibly several at once.
 pub trait ExternalRender: Send + Sync {
+    fn preset_value(&self, _key: &str, value: &serde_json::Value, _size: [f64; 2]) -> Result<serde_json::Value, String> {
+        Ok(value.clone())
+    }
+    fn absolute_point(&self, _param: &str) -> bool {
+        false
+    }
+    fn heading(&self, _param: &str) -> bool {
+        false
+    }
+    fn controls(&self, _instance: u64, _param: &str, _values: &crate::Params, _size: [f64; 2]) -> (bool, bool) {
+        (true, true)
+    }
+    fn update(&self, _instance: u64, values: &crate::Params, _size: [f64; 2]) -> Result<crate::Params, String> {
+        Ok(values.clone())
+    }
     fn render(&self, ctx: &EffectCtx, buf: Buf) -> Result<Buf, String>;
 }
 
@@ -303,4 +318,26 @@ mod tests {
         assert!(status("io.github.t.y/missing").is_some());
         assert!(status("ec.blur.gaussian").is_none());
     }
+}
+
+fn renderer(id: &str) -> Option<Arc<dyn ExternalRender>> {
+    registry().read().unwrap_or_else(PoisonError::into_inner).entries.get(id).and_then(|e| e.render.clone())
+}
+pub fn controls(id: &str, instance: u64, param: &str, values: &crate::Params, size: [f64; 2]) -> (bool, bool) {
+    renderer(id).map_or((true, true), |r| r.controls(instance, param, values, size))
+}
+pub fn update(id: &str, instance: u64, values: &crate::Params, size: [f64; 2]) -> Result<crate::Params, String> {
+    renderer(id).map_or_else(|| Ok(values.clone()), |r| r.update(instance, values, size))
+}
+
+pub fn heading(id: &str, param: &str) -> bool {
+    renderer(id).is_some_and(|r| r.heading(param))
+}
+pub fn absolute_point(ps: &ParamSpec) -> bool {
+    let r = registry().read().unwrap_or_else(PoisonError::into_inner);
+    r.entries.values().any(|e| e.spec.params.iter().any(|p| std::ptr::eq(p, ps)) && e.render.as_ref().is_some_and(|r| r.absolute_point(ps.id)))
+}
+
+pub fn preset_value(id: &str, key: &str, value: &serde_json::Value, size: [f64; 2]) -> Result<serde_json::Value, String> {
+    renderer(id).map_or_else(|| Ok(value.clone()), |r| r.preset_value(key, value, size))
 }
