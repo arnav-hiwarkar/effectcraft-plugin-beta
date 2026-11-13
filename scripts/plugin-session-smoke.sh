@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
-X=$ROOT/craft-extensions/target/debug/craft-ext
-B=$ROOT/effectcraft/target/debug/effectcraft-cli
-S=$(mktemp -d /tmp/ec-plugin-smoke.XXXX)
+X=${CRAFT_EXT_BIN:-$ROOT/craft-extensions/target/debug/craft-ext}
+B=${EFFECTCRAFT_CLI:-$ROOT/effectcraft/target/debug/effectcraft-cli}
+S=$(mktemp -d "${TMPDIR:-/tmp}/ec-plugin-smoke.XXXX")
 echo "Smoke artifacts: $S"
 export CRAFT_EXT_DIR=$S
 for name in effectcraft-cue-board effectcraft-point-tool effectcraft-channel-tint; do
