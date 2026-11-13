@@ -841,6 +841,13 @@ impl Runtime {
         }
     }
 
+    /// Rolls back the tool gesture in progress, if any. Other input never deselects an idle tool.
+    fn cancel_gesture(&self, s: &mut Session) {
+        if lock(&self.state).gesture.is_some() {
+            self.tool_event(s, "cancel", [0.0, 0.0], Value::Null);
+        }
+    }
+
     fn plugin_info(&self, id: &ExtensionId) -> Option<(Version, String, Vec<String>)> {
         let st = lock(&self.state);
         let p = st.loaded.iter().find(|p| &p.id == id)?;
@@ -1149,7 +1156,7 @@ impl PluginRuntime for Runtime {
 
     fn run_command(&self, s: &mut Session, id: &str, _params: &Value) -> effectcraft_engine::Result<Value> {
         self.sync_document(s);
-        self.tool_event(s, "cancel", [0.0, 0.0], Value::Null);
+        self.cancel_gesture(s);
         let (preset, session) = {
             let st = lock(&self.state);
             let preset = st.presets.iter().find(|p| p.command == id).cloned();
@@ -1194,6 +1201,18 @@ impl PluginRuntime for Runtime {
         for e in failures.into_iter().take(4) {
             effectcraft_engine::ext::notify(s, format!("Plugin: {e}"), true);
         }
+        // A document switch or a revocation cancels the gesture in progress, even while the pointer rests.
+        let stale_gesture = {
+            let st = lock(&self.state);
+            st.gesture.as_ref().zip(st.selected_tool.as_ref()).is_some_and(|(g, c)| {
+                !Arc::ptr_eq(&g.document, &s.plugin_document_token())
+                    || self.grants.stopped(&c.plugin, c.version)
+                    || self.grants.generation(&c.plugin) != g.generation
+            })
+        };
+        if stale_gesture {
+            self.tool_event(s, "cancel", [0.0, 0.0], Value::Null);
+        }
         self.serve(s, Duration::ZERO);
         if lock(&self.state).gesture.is_none() {
             self.app_events(s);
@@ -1227,7 +1246,7 @@ impl PluginRuntime for Runtime {
         if jobs.is_empty() {
             return Err("plugin is not loaded".into());
         }
-        self.tool_event(s, "cancel", [0.0, 0.0], Value::Null);
+        self.cancel_gesture(s);
         for (key, program) in jobs {
             let worker = self.spawn(&key, program)?;
             if let Some(old) = lock(&self.state).workers.insert(key, worker) {
@@ -1270,7 +1289,9 @@ impl PluginRuntime for Runtime {
         }
         let Some(generation) = generation else {
             if phase == "cancel" {
-                lock(&self.state).selected_tool = None;
+                let mut st = lock(&self.state);
+                st.selected_tool = None;
+                st.overlays.clear();
             }
             return;
         };
@@ -1312,7 +1333,7 @@ impl PluginRuntime for Runtime {
     }
 
     fn ui_event(&self, s: &mut Session, key: &str, rev: u64, widget: &str, value: Value) {
-        self.tool_event(s, "cancel", [0.0, 0.0], Value::Null);
+        self.cancel_gesture(s);
         let target = {
             let st = lock(&self.state);
             st.surfaces.get(key).filter(|sf| sf.rev == rev).map(|sf| {
@@ -1490,6 +1511,163 @@ mod regression_tests {
         assert_eq!(s.history.undo.len(), history);
         assert!(rt.selected_tool().is_none());
         assert!(rt.overlays().is_empty());
+    }
+
+    fn test_tool() -> SessionContribution {
+        SessionContribution {
+            plugin: ExtensionId::new("org.example.tool").unwrap(),
+            version: Version::parse("1.0.0").unwrap(),
+            plugin_name: "Test".into(),
+            contribution: "tool".into(),
+            label: "Tool".into(),
+            kind: ContributionKind::Tool,
+            category: None,
+            worker: "missing".into(),
+            declared: Arc::from([]),
+        }
+    }
+
+    #[test]
+    fn idle_tool_survives_panel_events_and_commands() {
+        let dir = tempfile::tempdir().unwrap();
+        let rt = Runtime::new(dir.path().to_path_buf(), false).unwrap();
+        let mut s = Session::default();
+        lock(&rt.state).selected_tool = Some(test_tool());
+        rt.ui_event(&mut s, "org.example.tool/panel", 1, "button", Value::Null);
+        assert!(rt.run_command(&mut s, "plugin.org.example.other.command", &json!({})).is_err());
+        assert_eq!(rt.selected_tool().as_deref(), Some("plugin.org.example.tool.tool"));
+    }
+
+    #[test]
+    fn pump_cancels_a_resting_gesture_after_a_document_switch_or_revocation() {
+        let dir = tempfile::tempdir().unwrap();
+        let rt = Runtime::new(dir.path().to_path_buf(), false).unwrap();
+        let mut s = Session::default();
+        s.execute("comp.new", json!({})).unwrap();
+        rt.pump(&mut s);
+        let before = s.project.clone();
+        let history = s.history.undo.len();
+        // Revoked (the release is not enabled) while the pointer rests: the preview edit is undone.
+        let mark = s.begin_group();
+        s.execute("layer.newNull", json!({"name":"preview"})).unwrap();
+        {
+            let mut st = lock(&rt.state);
+            st.selected_tool = Some(test_tool());
+            st.gesture = Some(Gesture { mark, generation: 0, document: s.plugin_document_token(), comp: s.active_comp_id(), selection: vec![] });
+            st.overlays.insert("org.example.tool".into(), json!([]));
+        }
+        rt.pump(&mut s);
+        assert!(lock(&rt.state).gesture.is_none());
+        assert!(Arc::ptr_eq(&before, &s.project));
+        assert_eq!(s.history.undo.len(), history);
+        assert!(rt.overlays().is_empty());
+        // A replaced document drops the old document's gesture.
+        let mut other = Session::default();
+        {
+            let mut st = lock(&rt.state);
+            st.selected_tool = Some(test_tool());
+            st.gesture =
+                Some(Gesture { mark: s.begin_group(), generation: 0, document: s.plugin_document_token(), comp: s.active_comp_id(), selection: vec![] });
+        }
+        rt.pump(&mut other);
+        assert!(lock(&rt.state).gesture.is_none());
+        assert!(rt.selected_tool().is_none());
+    }
+
+    /// Traps on `command` events (byte 10 of `{"event":"command"…}` is `c`), succeeds on `init`.
+    const TRAP_ON_COMMAND: &str = r#"(module
+      (memory (export "memory") 2)
+      (global $top (mut i32) (i32.const 65536))
+      (func (export "craft_abi") (result i32) (i32.const 1))
+      (func (export "craft_reset") (global.set $top (i32.const 65536)))
+      (func (export "craft_alloc") (param $n i32) (result i32) (local $p i32)
+        (local.set $p (global.get $top))
+        (global.set $top (i32.add (global.get $top) (i32.and (i32.add (local.get $n) (i32.const 7)) (i32.const -8))))
+        (local.get $p))
+      (func (export "craft_event") (param $p i32) (param $n i32) (result i32)
+        (if (i32.eq (i32.load8_u offset=10 (local.get $p)) (i32.const 99)) (then unreachable))
+        (i32.const 0)))"#;
+
+    #[test]
+    fn three_traps_pause_and_resume_reinstantiates() {
+        let dir = tempfile::tempdir().unwrap();
+        let rt = Runtime::new(dir.path().to_path_buf(), false).unwrap();
+        let mut s = Session::default();
+        let id = ExtensionId::new("io.github.tests.trap").unwrap();
+        let version = Version::parse("1.0.0").unwrap();
+        let manifest = Manifest::parse(
+            br#"
+schema = 2
+id = "io.github.tests.trap"
+name = "Trap"
+version = "1.0.0"
+license = "MIT"
+source = "https://example.com/tests"
+summary = "Tests"
+apps = ["effectcraft"]
+[[contribution]]
+id = "main"
+kind = "command"
+contract = "effectcraft.session@1.0"
+module = "test.wasm"
+label = "Trap"
+"#,
+        )
+        .unwrap();
+        let mut store = StoreState::default();
+        store.packages.insert(
+            id.clone(),
+            PackageRec {
+                origin: Origin::Dev,
+                releases: BTreeMap::from([(version, ReleaseRec { origin: None, sha256: "a".repeat(64), tier: Tier::Dev, installed: 0 })]),
+            },
+        );
+        store.apps.insert(
+            rt.app.clone(),
+            BTreeMap::from([(id.clone(), AppSetup { active: Some(version), enabled: BTreeSet::from(["main".into()]), ..Default::default() })]),
+        );
+        std::fs::write(dir.path().join(STATE_FILE), serde_json::to_vec(&store).unwrap()).unwrap();
+        std::thread::sleep(Duration::from_millis(260));
+        let plugin = Plugin::load(id.as_str(), &wat::parse_str(TRAP_ON_COMMAND).unwrap()).unwrap();
+        let worker = rt.spawn("trap-worker", Program::Wasm(plugin)).unwrap();
+        {
+            let mut st = lock(&rt.state);
+            st.loaded.push(Loaded {
+                id: id.clone(),
+                version,
+                name: "Trap".into(),
+                sha256: Some("a".repeat(64)),
+                source: Source::Local,
+                manifest,
+                enabled: BTreeSet::from(["main".into()]),
+            });
+            st.sessions.push(SessionContribution {
+                plugin: id.clone(),
+                version,
+                plugin_name: "Trap".into(),
+                contribution: "main".into(),
+                label: "Trap".into(),
+                kind: ContributionKind::Command,
+                category: None,
+                worker: "trap-worker".into(),
+                declared: Arc::from([]),
+            });
+            st.workers.insert("trap-worker".into(), worker);
+        }
+        let command = "plugin.io.github.tests.trap.main";
+        for _ in 0..3 {
+            let e = rt.run_command(&mut s, command, &json!({})).unwrap_err().to_string();
+            assert!(!e.contains("paused"), "{e}");
+        }
+        assert_eq!(rt.paused(), vec![id.to_string()]);
+        assert!(rt.run_command(&mut s, command, &json!({})).unwrap_err().to_string().contains("paused"));
+        // Resume replaces the worker with a fresh instance, whose `init` runs (and succeeds).
+        rt.resume(&mut s, id.as_str()).unwrap();
+        assert!(rt.paused().is_empty());
+        // The new instance runs events again: this one traps (not "paused") and counts one failure.
+        let e = rt.run_command(&mut s, command, &json!({})).unwrap_err().to_string();
+        assert!(!e.contains("paused"), "{e}");
+        assert!(rt.paused().is_empty());
     }
 
     #[test]

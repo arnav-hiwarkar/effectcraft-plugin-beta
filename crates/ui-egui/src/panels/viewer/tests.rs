@@ -197,3 +197,16 @@ fn every_3d_view_finds_its_japanese_row() {
     }
     crate::i18n::ui::set_current("en");
 }
+
+/// A plugin tool gesture never starts from Space-drag navigation, but one already begun still
+/// gets its updates and its commit when Space is pressed mid-drag (it used to stay open).
+#[test]
+fn plugin_tool_gesture_ends_even_if_space_is_pressed_mid_drag() {
+    // (started, dragged, stopped, clicked, space)
+    assert_eq!(tool_phases(true, true, false, false, false), ["begin"]);
+    assert_eq!(tool_phases(false, true, false, false, true), ["update"]);
+    assert_eq!(tool_phases(false, false, true, false, true), ["commit"]);
+    assert!(tool_phases(true, true, false, false, true).is_empty(), "Space-drag pans");
+    assert!(tool_phases(false, false, false, true, true).is_empty(), "Space-click pans");
+    assert_eq!(tool_phases(false, false, false, true, false), ["begin", "commit"]);
+}

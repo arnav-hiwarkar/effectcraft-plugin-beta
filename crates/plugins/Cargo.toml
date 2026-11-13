@@ -28,3 +28,4 @@ bytemuck = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+wat = "1"

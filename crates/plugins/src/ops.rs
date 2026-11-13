@@ -79,6 +79,46 @@ fn numeric_value(v: &Value) -> bool {
         || v.as_array().is_some_and(|a| a.len() <= 4 && a.iter().all(|v| v.as_f64().is_some_and(f64::is_finite)))
 }
 
+/// String properties hold file paths (Apply Color LUT's `.cube`); reads never return their values.
+fn redact_strings(v: &mut Value, depth: usize) {
+    if depth > 64 {
+        return;
+    }
+    match v {
+        Value::Object(o) => {
+            if o.get("type").and_then(Value::as_str) == Some("string") {
+                for k in ["value", "evaluated"] {
+                    if let Some(x) = o.get_mut(k) {
+                        *x = Value::Null;
+                    }
+                }
+                for key in o.get_mut("keys").and_then(Value::as_array_mut).into_iter().flatten() {
+                    if let Some(x) = key.get_mut("value") {
+                        *x = Value::Null;
+                    }
+                }
+                o.insert("redacted".into(), json!(true));
+            }
+            o.values_mut().for_each(|c| redact_strings(c, depth + 1));
+        }
+        Value::Array(a) => a.iter_mut().for_each(|c| redact_strings(c, depth + 1)),
+        _ => {}
+    }
+}
+
+/// Project inventory without the project path, footage paths (in `problem`), renderer or undo history.
+fn project_summary(s: &mut Session) -> Result<Value, OpError> {
+    const ITEM: [&str; 10] = ["id", "name", "type", "label", "parent", "size", "duration", "layers", "frameRate", "missing"];
+    let full = s.execute("project.summary", json!({})).map_err(engine)?;
+    let items: Vec<Value> = full["items"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|i| Value::Object(ITEM.iter().filter_map(|k| i.get(*k).map(|v| ((*k).to_string(), v.clone()))).collect()))
+        .collect();
+    Ok(json!({"items": items, "bitDepth": full["bitDepth"], "activeComp": full["activeComp"], "time": full["time"], "selectedLayers": full["selectedLayers"]}))
+}
+
 fn local_id(s: &str) -> bool {
     !s.is_empty() && s.len() <= 48 && s.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_'))
 }
@@ -116,10 +156,12 @@ pub fn run(s: &mut Session, scope: &Scope, op: &str, args: Value, own_panels: &[
                     return Err(invalid("layer not in captured composition"));
                 }
             }
-            s.execute(op, Value::Object(args)).map_err(engine)?
+            let mut out = s.execute(op, Value::Object(args)).map_err(engine)?;
+            redact_strings(&mut out, 0);
+            out
         }
 
-        "project.summary" => s.execute("project.summary", json!({})).map_err(engine)?,
+        "project.summary" => project_summary(s)?,
         "selection.get" => layers_of(s, comp(scope)?, Some(&scope.selection))?,
         "layer.list" => layers_of(s, comp(scope)?, None)?,
         "comp.info" => s.execute("comp.info", json!({"comp": comp(scope)?.0})).map_err(engine)?,
@@ -221,6 +263,23 @@ mod tests {
         assert!(numeric_value(&json!([1, 2, 3, 4])));
         assert!(!numeric_value(&json!([1, 2, 3, 4, 5])));
     }
+    #[test]
+    fn document_reads_never_return_file_paths() {
+        let mut s = Session::default();
+        s.execute("comp.new", json!({"width":32,"height":32})).unwrap();
+        let id = s.execute("layer.newSolid", json!({})).unwrap()["layer"].as_u64().unwrap();
+        s.execute("layer.select", json!({"layers":[id]})).unwrap();
+        let r = s.execute("effect.apply", json!({"effect":"ec.utility.applylut"})).unwrap();
+        let lut = format!("{}/lut", r["paths"][0].as_str().unwrap());
+        s.execute("prop.set", json!({"layer":id,"path":lut,"value":"/secret/grade.cube"})).unwrap();
+        s.path = Some("/secret/project.ecproj".into());
+        let scope = Scope { comp: s.active_comp_id(), selection: vec![LayerId(id)], plugin_name: "Test".into() };
+        for (op, args) in [("prop.get", json!({"layer":id,"path":lut})), ("layer.tree", json!({"layer":id})), ("project.summary", json!({}))] {
+            let Ok(Outcome::Value(v)) = run(&mut s, &scope, op, args, &[]) else { panic!("{op} failed") };
+            assert!(!v.to_string().contains("secret"), "{op} leaked a path: {v}");
+        }
+    }
+
     #[test]
     fn property_keyframes_markers_and_group_undo() {
         let mut s = Session::default();

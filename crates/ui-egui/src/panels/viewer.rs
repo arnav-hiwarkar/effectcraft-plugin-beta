@@ -49,6 +49,20 @@ pub struct ViewerMap {
     pub area: Rect,
 }
 
+/// Plugin tool phases for one frame of primary-button input. Space-drag navigation never starts a
+/// gesture, but a gesture already begun always gets its updates and its end (pressing Space mid-drag
+/// must not leave it open). The runtime ignores updates and commits when no gesture is open.
+fn tool_phases(started: bool, dragged: bool, stopped: bool, clicked: bool, space: bool) -> &'static [&'static str] {
+    match () {
+        _ if clicked && !space => &["begin", "commit"],
+        _ if started && !space => &["begin"],
+        _ if started || clicked => &[],
+        _ if stopped => &["commit"],
+        _ if dragged => &["update"],
+        _ => &[],
+    }
+}
+
 impl ViewerMap {
     pub fn to_screen(&self, p: [f64; 2]) -> Pos2 {
         pos2(self.origin.x + p[0] as f32 * self.zoom, self.origin.y + p[1] as f32 * self.zoom)
@@ -225,32 +239,19 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     v.mods = ui.input(|i| i.modifiers);
     let plugin_tool = app.session.plugins.clone().filter(|rt| rt.selected_tool().is_some());
     if let Some(rt) = &plugin_tool {
-        if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-            rt.tool_event(&mut app.session, "cancel", [0.0, 0.0], json!({}));
-        }
-        if !v.space_pan {
-            let phase = if resp.drag_started_by(egui::PointerButton::Primary) {
-                Some("begin")
-            } else if resp.drag_stopped_by(egui::PointerButton::Primary) {
-                Some("commit")
-            } else if resp.dragged_by(egui::PointerButton::Primary) {
-                Some("update")
-            } else {
-                None
-            };
-            if resp.clicked_by(egui::PointerButton::Primary) {
-                if let Some(pos) = resp.interact_pointer_pos() {
-                    let at = v.map.to_comp(pos);
-                    rt.tool_event(&mut app.session, "begin", at, json!({}));
-                    rt.tool_event(&mut app.session, "commit", at, json!({}));
-                }
-            } else if let (Some(phase), Some(pos)) = (phase, resp.interact_pointer_pos()) {
-                rt.tool_event(
-                    &mut app.session,
-                    phase,
-                    v.map.to_comp(pos),
-                    json!({"shift":v.mods.shift,"alt":v.mods.alt,"ctrl":v.mods.ctrl,"command":v.mods.command}),
-                );
+        // Escape is handled app-wide in `plugins_ui::frame`.
+        let primary = egui::PointerButton::Primary;
+        let phases = tool_phases(
+            resp.drag_started_by(primary),
+            resp.dragged_by(primary),
+            resp.drag_stopped_by(primary),
+            resp.clicked_by(primary),
+            v.space_pan,
+        );
+        if let Some(pos) = resp.interact_pointer_pos().or_else(|| ui.input(|i| i.pointer.latest_pos())) {
+            let modifiers = json!({"shift":v.mods.shift,"alt":v.mods.alt,"ctrl":v.mods.ctrl,"command":v.mods.command});
+            for phase in phases {
+                rt.tool_event(&mut app.session, phase, v.map.to_comp(pos), modifiers.clone());
             }
         }
         for ops in rt.overlays() {
