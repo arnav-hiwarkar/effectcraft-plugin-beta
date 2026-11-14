@@ -209,6 +209,9 @@ struct SessionContribution {
     worker: String,
     /// Required ∪ optional permissions of this contribution.
     declared: Arc<[Permission]>,
+    /// The UI level its session contract declares: trees needing more are refused, as in the
+    /// other apps, so a plugin cannot rely on a newer UI than it declares.
+    ui_level: craft_ext_core::contract::Level,
 }
 
 /// A preset from a `preset` contribution (applied on the session's thread; no code runs).
@@ -576,6 +579,7 @@ impl Runtime {
                     category: c.category.clone(),
                     worker,
                     declared,
+                    ui_level: craft_ext_core::ui::tree::ui_level_for_session(c.contract.level),
                 });
                 Ok(())
             }
@@ -801,7 +805,12 @@ impl Runtime {
             let st = lock(&self.state);
             let (comp, selection) =
                 st.gesture.as_ref().map(|g| (g.comp, g.selection.clone())).unwrap_or_else(|| (s.active_comp_id(), s.state.selected_layers.clone()));
-            Scope { comp, selection, plugin_name }
+            let ui_level = st
+                .sessions
+                .iter()
+                .find(|c| c.plugin == begin.plugin && c.contribution == begin.inv.contribution)
+                .map_or(craft_ext_core::ui::tree::UI_LEVEL, |c| c.ui_level);
+            Scope { comp, selection, plugin_name, ui_level }
         };
         let mark = s.begin_group();
         let selection: Vec<u64> = scope.selection.iter().map(|l| l.0).collect();
@@ -1077,21 +1086,41 @@ fn status_text(s: &Status) -> String {
 }
 
 /// Plugin ids of the plugin effects used in `project`.
-fn used_plugins(project: &Project) -> BTreeSet<String> {
-    let mut out = BTreeSet::new();
+/// Plugins the project's effects use, with the contributions (effect ids) each one uses.
+fn used_plugins(project: &Project) -> BTreeMap<String, BTreeSet<String>> {
+    let mut out: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     for (_, c) in project.comps() {
         for l in &c.layers {
             for g in l.effects().into_iter().flat_map(|fx| fx.groups()) {
                 if let effectcraft_project::GroupKind::Effect { effect } = &g.kind
                     && effectcraft_engine::ext::is_plugin_effect(effect)
-                    && let Some(plugin) = effect.split('/').next()
+                    && let Some((plugin, contribution)) = effect.split_once('/')
                 {
-                    out.insert(plugin.to_string());
+                    out.entry(plugin.to_string()).or_default().insert(contribution.to_string());
                 }
             }
         }
     }
     out
+}
+
+/// The reference to save for a used plugin. The loaded release replaces the recorded one when it
+/// reads the same saved-state version for every used contribution, so a project saved after an
+/// update names the release it now uses; otherwise the recorded reference is kept, so reopening
+/// still reports the mismatch instead of silently reading old state with new code.
+fn saved_reference(
+    recorded: Option<&effectcraft_project::PluginRef>,
+    loaded: Option<effectcraft_project::PluginRef>,
+    used: &BTreeSet<String>,
+) -> Option<effectcraft_project::PluginRef> {
+    match (recorded, loaded) {
+        (Some(r), Some(l)) => {
+            let same_state = used.iter().all(|c| r.contributions.get(c).is_none_or(|v| l.contributions.get(c) == Some(v)));
+            Some(if same_state { l } else { r.clone() })
+        }
+        (None, Some(l)) => Some(l),
+        (r, None) => r.cloned(),
+    }
 }
 
 impl Runtime {
@@ -1421,26 +1450,23 @@ impl PluginRuntime for Runtime {
         let st = lock(&self.state);
         used_plugins(project)
             .into_iter()
-            .filter_map(|id| {
-                if let Some(recorded) = project.plugins.iter().find(|p| p.id == id) {
-                    return Some(recorded.clone());
-                }
-                if let Some(p) = st.loaded.iter().find(|p| p.id.as_str() == id) {
-                    Some(effectcraft_project::PluginRef {
-                        contributions: p.manifest.contributions_for(&self.app).map(|c| (c.id.clone(), c.state_version)).collect(),
-                        id,
-                        version: p.version.to_string(),
-                        sha256: p.sha256.clone(),
-                        source: match p.source {
-                            Source::Catalogue => "catalogue".into(),
-                            Source::Local => "local".into(),
-                        },
-                        name: p.name.clone(),
-                    })
-                } else {
-                    // Missing here: keep what the project said, so saving never loses it.
-                    project.plugins.iter().find(|r| r.id == id).cloned()
-                }
+            .filter_map(|(id, used)| {
+                let recorded = project.plugins.iter().find(|p| p.id == id);
+                // Only the contributions this project uses: a disabled, unused one must not make
+                // reopening ask for it.
+                let loaded = st.loaded.iter().find(|p| p.id.as_str() == id).map(|p| effectcraft_project::PluginRef {
+                    contributions: p.manifest.contributions_for(&self.app).filter(|c| used.contains(&c.id)).map(|c| (c.id.clone(), c.state_version)).collect(),
+                    id: id.clone(),
+                    version: p.version.to_string(),
+                    sha256: p.sha256.clone(),
+                    source: match p.source {
+                        Source::Catalogue => "catalogue".into(),
+                        Source::Local => "local".into(),
+                    },
+                    name: p.name.clone(),
+                });
+                // Missing here: keep what the project said, so saving never loses it.
+                saved_reference(recorded, loaded, &used)
             })
             .collect()
     }
@@ -1566,6 +1592,7 @@ mod regression_tests {
                 category: None,
                 worker: "missing".into(),
                 declared: Arc::from([]),
+                ui_level: craft_ext_core::ui::tree::UI_LEVEL,
             });
             st.gesture = Some(Gesture { mark, generation: 0, document: s.plugin_document_token(), comp: s.active_comp_id(), selection: vec![] });
             st.overlays.insert("org.example.tool".into(), json!([]));
@@ -1589,6 +1616,7 @@ mod regression_tests {
             category: None,
             worker: "missing".into(),
             declared: Arc::from([]),
+            ui_level: craft_ext_core::ui::tree::UI_LEVEL,
         }
     }
 
@@ -1736,6 +1764,7 @@ label = "Trap"
                 category: None,
                 worker: "trap-worker".into(),
                 declared: Arc::from([]),
+                ui_level: craft_ext_core::ui::tree::UI_LEVEL,
             });
             st.workers.insert("trap-worker".into(), worker);
         }
@@ -1841,6 +1870,7 @@ label = "Test"
                 category: None,
                 worker: "worker".into(),
                 declared: declared.clone(),
+                ui_level: craft_ext_core::ui::tree::UI_LEVEL,
             });
             st.surfaces.insert(
                 key.clone(),
@@ -1973,6 +2003,26 @@ label = "Test"
         lock(&rt.state).surfaces.get_mut(&key).unwrap().rev = 2;
         let error = rt.validate_request(&s, &r).err().unwrap();
         assert_eq!(error.code, Code::Stale);
+    }
+
+    #[test]
+    fn saved_references_follow_the_loaded_release_only_when_state_matches() {
+        let r = |v: &str, state: u32| effectcraft_project::PluginRef {
+            contributions: [("fx".to_string(), state)].into(),
+            id: "io.github.a.b".into(),
+            version: v.into(),
+            sha256: None,
+            source: "catalogue".into(),
+            name: "B".into(),
+        };
+        let used: BTreeSet<String> = ["fx".to_string()].into();
+        // An update that reads the same state: the project now names the new release.
+        assert_eq!(saved_reference(Some(&r("1.0.0", 1)), Some(r("1.1.0", 1)), &used).unwrap().version, "1.1.0");
+        // A state schema change: keep the recorded release so reopening reports it.
+        assert_eq!(saved_reference(Some(&r("1.0.0", 1)), Some(r("2.0.0", 2)), &used).unwrap().version, "1.0.0");
+        // Not loaded: never lose the recorded reference.
+        assert_eq!(saved_reference(Some(&r("1.0.0", 1)), None, &used).unwrap().version, "1.0.0");
+        assert!(saved_reference(None, None, &used).is_none());
     }
 
     #[test]

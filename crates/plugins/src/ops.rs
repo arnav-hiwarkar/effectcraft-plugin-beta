@@ -15,6 +15,8 @@ pub struct Scope {
     pub selection: Vec<LayerId>,
     /// The plugin's display name (notifications are prefixed with it).
     pub plugin_name: String,
+    /// The UI level the calling contribution declares (trees needing more are refused).
+    pub ui_level: craft_ext_core::contract::Level,
 }
 
 /// UI changes an op asks for; the runtime applies them to its surfaces.
@@ -65,10 +67,11 @@ fn layers_of(s: &Session, cid: ItemId, only: Option<&[LayerId]>) -> Result<Value
     Ok(json!({"layers": layers}))
 }
 
-/// Validates a UI tree (size, depth, labels) and returns it as JSON for the frontend.
-pub fn checked_tree(tree: &Value) -> Result<Value, OpError> {
+/// Validates a UI tree (size, depth, labels, and no newer UI than `level`) and returns it as JSON
+/// for the frontend.
+pub fn checked_tree(tree: &Value, level: craft_ext_core::contract::Level) -> Result<Value, OpError> {
     let node = Node::parse(tree).map_err(|e| invalid(e.0))?;
-    node.validate().map_err(|e| invalid(e.0))?;
+    node.validate_at(level).map_err(|e| invalid(e.0))?;
     serde_json::to_value(&node).map_err(|e| OpError::new(Code::Internal, e.to_string()))
 }
 
@@ -128,8 +131,10 @@ fn local_id(s: &str) -> bool {
 pub fn run(s: &mut Session, scope: &Scope, op: &str, args: Value, own_panels: &[String]) -> Result<Outcome, OpError> {
     let v = match op {
         "canvas.overlay.set" => {
+            // Overlays are host drawing, not plugin panels: the ops are checked at the newest level.
             let tree = checked_tree(
                 &json!({"type":"canvas","id":"overlay","label":"Guides","width":1,"height":1,"ops":args.get("ops").cloned().unwrap_or(json!([]))}),
+                craft_ext_core::ui::tree::UI_LEVEL,
             )?;
             return Ok(Outcome::Ui(UiChange::Overlay(tree["ops"].clone())));
         }
@@ -232,7 +237,7 @@ pub fn run(s: &mut Session, scope: &Scope, op: &str, args: Value, own_panels: &[
             if !own_panels.contains(&panel) {
                 return Err(OpError::new(Code::NotFound, format!("this plugin declares no enabled panel `{panel}`")));
             }
-            let tree = checked_tree(args.get("tree").unwrap_or(&Value::Null))?;
+            let tree = checked_tree(args.get("tree").unwrap_or(&Value::Null), scope.ui_level)?;
             return Ok(Outcome::Ui(UiChange::Panel { panel, tree }));
         }
         "ui.window.open" => {
@@ -241,7 +246,7 @@ pub fn run(s: &mut Session, scope: &Scope, op: &str, args: Value, own_panels: &[
                 return Err(invalid("`id` must be letters, digits, - or _"));
             }
             let title = text(&args, "title", 64)?.to_string();
-            let tree = checked_tree(args.get("tree").unwrap_or(&Value::Null))?;
+            let tree = checked_tree(args.get("tree").unwrap_or(&Value::Null), scope.ui_level)?;
             return Ok(Outcome::Ui(UiChange::Window { id, title, tree }));
         }
         _ => return Err(OpError::new(Code::NotFound, format!("EffectCraft has no operation {op}"))),
@@ -254,8 +259,12 @@ mod tests {
     use super::*;
     #[test]
     fn v2_trees_and_invalid_trees() {
-        assert!(checked_tree(&json!({"type":"tabs","id":"tabs","tabs":[{"id":"one","label":"One","children":[{"type":"table","id":"rows","label":"Rows","columns":[{"label":"Name"}],"rows":[]}]}]})).is_ok());
-        assert!(checked_tree(&json!({"type":"table","id":"rows","columns":[],"rows":[]})).is_err());
+        let latest = craft_ext_core::ui::tree::UI_LEVEL;
+        let tabs = json!({"type":"tabs","id":"tabs","tabs":[{"id":"one","label":"One","children":[{"type":"table","id":"rows","label":"Rows","columns":[{"label":"Name"}],"rows":[]}]}]});
+        assert!(checked_tree(&tabs, latest).is_ok());
+        // A plugin declaring the 1.0 session contract cannot use level-1.1 nodes (as in PhotoCraft).
+        assert!(checked_tree(&tabs, craft_ext_core::contract::Level::new(1, 0)).unwrap_err().message.contains("1.1"));
+        assert!(checked_tree(&json!({"type":"table","id":"rows","columns":[],"rows":[]}), latest).is_err());
     }
     #[test]
     fn file_values_are_not_document_edits() {
@@ -282,7 +291,7 @@ mod tests {
         let lut = format!("{}/lut", r["paths"][0].as_str().unwrap());
         s.execute("prop.set", json!({"layer":id,"path":lut,"value":"/secret/grade.cube"})).unwrap();
         s.path = Some("/secret/project.ecproj".into());
-        let scope = Scope { comp: s.active_comp_id(), selection: vec![LayerId(id)], plugin_name: "Test".into() };
+        let scope = Scope { comp: s.active_comp_id(), selection: vec![LayerId(id)], plugin_name: "Test".into(), ui_level: craft_ext_core::ui::tree::UI_LEVEL };
         for (op, args) in [("prop.get", json!({"layer":id,"path":lut})), ("layer.tree", json!({"layer":id})), ("project.summary", json!({}))] {
             let Ok(Outcome::Value(v)) = run(&mut s, &scope, op, args, &[]) else { panic!("{op} failed") };
             assert!(!v.to_string().contains("secret"), "{op} leaked a path: {v}");
@@ -292,10 +301,10 @@ mod tests {
     #[test]
     fn property_keyframes_markers_and_group_undo() {
         let mut s = Session::default();
-        let empty = Scope { comp: None, selection: vec![], plugin_name: "Test".into() };
+        let empty = Scope { comp: None, selection: vec![], plugin_name: "Test".into(), ui_level: craft_ext_core::ui::tree::UI_LEVEL };
         assert!(run(&mut s, &empty, "comp.new", json!({"width":32,"height":32}), &[]).is_ok());
         let id = s.execute("layer.newNull", json!({})).unwrap()["layer"].as_u64().unwrap();
-        let scope = Scope { comp: s.active_comp_id(), selection: vec![LayerId(id)], plugin_name: "Test".into() };
+        let scope = Scope { comp: s.active_comp_id(), selection: vec![LayerId(id)], plugin_name: "Test".into(), ui_level: craft_ext_core::ui::tree::UI_LEVEL };
         let mark = s.begin_group();
         run(&mut s, &scope, "prop.addKey", json!({"layer":id,"path":"transform/position","value":[10,20],"time":0}), &[]).unwrap_or_else(|e| panic!("{e}"));
         run(&mut s, &scope, "marker.add", json!({"label":"Cue","time":0}), &[]).unwrap_or_else(|e| panic!("{e}"));

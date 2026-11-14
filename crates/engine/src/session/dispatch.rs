@@ -14,7 +14,7 @@ impl Session {
             // Plugin commands are not journaled: their result depends on installed plugin code.
             return guard::guarded(&format!("plugin command `{id}`"), || rt.run_command(self, id, &params));
         }
-        let spec = commands::find(id).ok_or_else(|| EngineError::UnknownCommand(id.to_string()))?;
+        let spec = commands::find(id).ok_or_else(|| unknown_command(id))?;
         if self.refused_during_gesture(id, spec.journal) {
             return Err(EngineError::Other("a plugin tool gesture is in progress; finish or cancel it first".into()));
         }
@@ -98,5 +98,16 @@ impl Session {
 
     pub fn drain_events(&mut self) -> Vec<Event> {
         std::mem::take(&mut self.events)
+    }
+}
+
+/// An unknown `plugin.` command usually names a plugin contribution that is not loaded: say why.
+fn unknown_command(id: &str) -> EngineError {
+    if id.starts_with("plugin.") {
+        EngineError::Other(format!(
+            "`{id}` is not available: its plugin is not installed or enabled here, a permission it needs was revoked, or it is paused. Check `plugin list` and `plugin permissions <plugin id>`."
+        ))
+    } else {
+        EngineError::UnknownCommand(id.to_string())
     }
 }
