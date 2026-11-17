@@ -139,6 +139,7 @@ pub fn run(s: &mut Session, scope: &Scope, op: &str, args: Value, own_panels: &[
             return Ok(Outcome::Ui(UiChange::Overlay(tree["ops"].clone())));
         }
         "marker.list" => s.execute("markers.list", json!({"comp":comp(scope)?.0})).map_err(engine)?,
+        "prop.ease" => ease_keys(s, scope, &args)?,
         "prop.get" | "prop.set" | "prop.addKey" | "prop.reset" | "effect.remove" | "layer.newSolid" | "layer.newNull" | "layer.select" | "markers.set"
         | "markers.delete" | "effect.reorder" | "comp.settings" | "layer.tree" | "time.set" | "layer.addItem" | "layer.newText" | "layer.newShape"
         | "layer.setSwitch" | "comp.new" => {
@@ -254,6 +255,60 @@ pub fn run(s: &mut Session, scope: &Scope, op: &str, args: Value, own_panels: &[
     Ok(Outcome::Value(v))
 }
 
+fn ease_keys(s: &mut Session, scope: &Scope, args: &Value) -> Result<Value, OpError> {
+    let cid = comp(scope)?;
+    let layer = args.get("layer").and_then(Value::as_u64).ok_or_else(|| invalid("layer id required"))?;
+    let path = text(args, "path", 512)?;
+    if !s.project.comp(cid).is_some_and(|c| c.layer(LayerId(layer)).is_some()) {
+        return Err(invalid("layer not in captured composition"));
+    }
+    let times = args.get("times").and_then(Value::as_array).filter(|t| !t.is_empty() && t.len() <= 1000).ok_or_else(|| invalid("times must list 1 to 1000 key times in seconds"))?;
+    let keys: Vec<Value> = times
+        .iter()
+        .map(|t| t.as_f64().filter(|t| t.is_finite()).map(|t| json!({"layer": layer, "path": path, "time": t})).ok_or_else(|| invalid("each time must be a number of seconds")))
+        .collect::<Result<_, _>>()?;
+    s.execute("keys.select", json!({"comp": cid.0, "keys": keys})).map_err(engine)?;
+    if let Some(preset) = args.get("preset") {
+        let which = match preset.as_str() {
+            Some("easy") => "both",
+            Some("easy-in") => "in",
+            Some("easy-out") => "out",
+            _ => return Err(invalid("preset must be easy, easy-in or easy-out")),
+        };
+        s.execute("keys.easyEase", json!({"which": which})).map_err(engine)?;
+        return Ok(Value::Null);
+    }
+    if let Some(interp) = args.get("interpolation") {
+        let name = match interp.as_str() {
+            Some(v @ ("linear" | "bezier" | "hold")) => v,
+            Some("auto") => "autoBezier",
+            Some("continuous") => "continuousBezier",
+            _ => return Err(invalid("interpolation must be linear, bezier, hold, auto or continuous")),
+        };
+        s.execute("keys.interpolation", json!({"interpolation": name})).map_err(engine)?;
+    }
+    let mut velocity = serde_json::Map::new();
+    for (side, key) in [("in", "in"), ("out", "out")] {
+        let Some(v) = args.get(side) else { continue };
+        let number = |k: &str, range: std::ops::RangeInclusive<f64>| -> Result<Option<f64>, OpError> {
+            match v.get(k) {
+                None => Ok(None),
+                Some(n) => n.as_f64().filter(|n| range.contains(n)).map(Some).ok_or_else(|| invalid(format!("{side}.{k} is out of range"))),
+            }
+        };
+        if let Some(speed) = number("speed", -1e9..=1e9)? {
+            velocity.insert(format!("{key}Speed"), json!(speed));
+        }
+        if let Some(influence) = number("influence", 0.1..=100.0)? {
+            velocity.insert(format!("{key}Influence"), json!(influence));
+        }
+    }
+    if !velocity.is_empty() {
+        s.execute("keys.velocity", Value::Object(velocity)).map_err(engine)?;
+    }
+    Ok(Value::Null)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -296,6 +351,25 @@ mod tests {
             let Ok(Outcome::Value(v)) = run(&mut s, &scope, op, args, &[]) else { panic!("{op} failed") };
             assert!(!v.to_string().contains("secret"), "{op} leaked a path: {v}");
         }
+    }
+
+    #[test]
+    fn easing_named_keys_changes_their_interpolation_and_velocity_in_one_step() {
+        let mut s = Session::default();
+        s.execute("comp.new", json!({"width":32,"height":32})).unwrap();
+        let id = s.execute("layer.newNull", json!({})).unwrap()["layer"].as_u64().unwrap();
+        let scope = Scope { comp: s.active_comp_id(), selection: vec![LayerId(id)], plugin_name: "Test".into(), ui_level: craft_ext_core::ui::tree::UI_LEVEL };
+        for (t, v) in [(0.0, 0.0), (1.0, 100.0)] {
+            run(&mut s, &scope, "prop.addKey", json!({"layer":id,"path":"transform/opacity","value":v,"time":t}), &[]).unwrap_or_else(|e| panic!("{e}"));
+        }
+        let keys = |s: &Session| s.project.comp(scope.comp.unwrap()).unwrap().layer(LayerId(id)).unwrap().props.prop("transform/opacity").unwrap().keys.clone();
+        run(&mut s, &scope, "prop.ease", json!({"layer":id,"path":"transform/opacity","times":[0,1],"preset":"easy"}), &[]).unwrap_or_else(|e| panic!("{e}"));
+        assert!(keys(&s).iter().all(|k| k.in_interp == effectcraft_keyframe::Interp::Bezier && k.out_ease[0] == effectcraft_keyframe::Ease::EASY));
+        let custom = json!({"layer":id,"path":"transform/opacity","times":[1],"interpolation":"bezier","in":{"speed":0,"influence":80}});
+        run(&mut s, &scope, "prop.ease", custom, &[]).unwrap_or_else(|e| panic!("{e}"));
+        assert!((keys(&s)[1].in_ease[0].influence - 0.8).abs() < 1e-9);
+        assert!(run(&mut s, &scope, "prop.ease", json!({"layer":id,"path":"transform/opacity","times":[],"preset":"easy"}), &[]).is_err());
+        assert!(run(&mut s, &scope, "prop.ease", json!({"layer":id,"path":"transform/opacity","times":[0],"preset":"bounce"}), &[]).is_err());
     }
 
     #[test]

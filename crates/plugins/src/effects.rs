@@ -261,6 +261,29 @@ impl ExternalRender for FilterEffect {
     }
 }
 
+pub fn host_value(p: &Param, v: &craft_ext_core::form::Value, size: [f64; 2]) -> KV {
+    use craft_ext_core::form::Value as V;
+    match v {
+        V::Number(n) => KV::Scalar(*n),
+        V::Bool(b) => KV::Bool(*b),
+        V::Color(c) => KV::Color(c.map(f64::from)),
+        V::Point(q) => KV::Vec2(if matches!(p.kind, ParamKind::Point { space: PointSpace::ImagePercent, .. }) {
+            [q[0] * size[0] / 100.0, q[1] * size[1] / 100.0]
+        } else {
+            *q
+        }),
+        V::String(s) => match &p.kind {
+            ParamKind::Choice { options, .. } | ParamKind::Radio { options, .. } => KV::Enum(options.iter().position(|o| o.id == *s).unwrap_or(0) as u32),
+            _ => KV::Str(s.clone()),
+        },
+    }
+}
+fn form_values(form: &craft_ext_core::form::Form, params: &effectcraft_effects::Params, size: [f64; 2]) -> Result<craft_ext_core::form::Values, String> {
+    let ctx = EffectCtx { params, time: 0.0, layer_size: size, seed: 0, adjustment: false, env: Default::default() };
+    let buf = Buf { img: effectcraft_effects::Image { width: 0, height: 0, data: vec![] }, offset: [0.0; 2], scale: 1.0 };
+    serde_json::from_value(context(&form.params, &ctx, &buf)["params"].clone()).map_err(|e| e.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -360,27 +383,4 @@ mod tests {
         let j = context(&params, &ctx, &buf);
         assert_eq!(j["params"]["at"], json!([50.0, 50.0]), "point defaults are fractions of the full layer");
     }
-}
-
-pub fn host_value(p: &Param, v: &craft_ext_core::form::Value, size: [f64; 2]) -> KV {
-    use craft_ext_core::form::Value as V;
-    match v {
-        V::Number(n) => KV::Scalar(*n),
-        V::Bool(b) => KV::Bool(*b),
-        V::Color(c) => KV::Color(c.map(f64::from)),
-        V::Point(q) => KV::Vec2(if matches!(p.kind, ParamKind::Point { space: PointSpace::ImagePercent, .. }) {
-            [q[0] * size[0] / 100.0, q[1] * size[1] / 100.0]
-        } else {
-            *q
-        }),
-        V::String(s) => match &p.kind {
-            ParamKind::Choice { options, .. } | ParamKind::Radio { options, .. } => KV::Enum(options.iter().position(|o| o.id == *s).unwrap_or(0) as u32),
-            _ => KV::Str(s.clone()),
-        },
-    }
-}
-fn form_values(form: &craft_ext_core::form::Form, params: &effectcraft_effects::Params, size: [f64; 2]) -> Result<craft_ext_core::form::Values, String> {
-    let ctx = EffectCtx { params, time: 0.0, layer_size: size, seed: 0, adjustment: false, env: Default::default() };
-    let buf = Buf { img: effectcraft_effects::Image { width: 0, height: 0, data: vec![] }, offset: [0.0; 2], scale: 1.0 };
-    serde_json::from_value(context(&form.params, &ctx, &buf)["params"].clone()).map_err(|e| e.to_string())
 }

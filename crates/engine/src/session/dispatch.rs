@@ -33,11 +33,11 @@ impl Session {
         let caught = guard::caught();
         let r = guard::guarded(&format!("command `{id}`"), || (spec.run)(self, &params));
         let r = crate::replay::after_command(self, id, &params, &nesting, caught, r)?;
-        if id == "effect.apply" {
-            if let Some(rt) = self.plugins.clone() {
-                let refs = rt.project_plugins(&self.project);
-                std::sync::Arc::make_mut(&mut self.project).plugins = refs;
-            }
+        if id == "effect.apply"
+            && let Some(rt) = self.plugins.clone()
+        {
+            let refs = rt.project_plugins(&self.project);
+            std::sync::Arc::make_mut(&mut self.project).plugins = refs;
         }
         self.learn_observe(id, &params);
         if spec.journal && !nesting.inside_journaled() {

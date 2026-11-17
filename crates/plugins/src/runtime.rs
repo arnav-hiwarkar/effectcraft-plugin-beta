@@ -169,8 +169,15 @@ fn event_result<T, E: std::fmt::Display>(r: Result<T, E>, finish_error: Option<S
     }
 }
 
+struct EventJob {
+    dispatch: Dispatch,
+    inv: Invocation,
+    event: Value,
+    done: Option<Sender<Result<(), String>>>,
+}
+
 enum Job {
-    Event { dispatch: Dispatch, inv: Invocation, event: Value, done: Option<Sender<Result<(), String>>> },
+    Event(Box<EventJob>),
     Stop,
 }
 
@@ -500,7 +507,7 @@ impl Runtime {
                 if let Some(w) = st.workers.get(&worker) {
                     let (done, finished) = mpsc::channel();
                     if w.tx
-                        .try_send(Job::Event {
+                        .try_send(Job::Event(Box::new(EventJob {
                             dispatch: Dispatch {
                                 document: s.plugin_document_token(),
                                 epoch: s.script_ui.project_epoch,
@@ -510,7 +517,7 @@ impl Runtime {
                             inv,
                             event: json!({"event": "init"}),
                             done: Some(done),
-                        })
+                        })))
                         .is_ok()
                     {
                         initialized.push(finished);
@@ -839,7 +846,7 @@ impl Runtime {
                 sha256: st.loaded.iter().find(|p| p.id == inv.plugin).and_then(|p| p.sha256.clone()),
                 surface,
             };
-            match w.tx.try_send(Job::Event { dispatch, inv, event, done }) {
+            match w.tx.try_send(Job::Event(Box::new(EventJob { dispatch, inv, event, done }))) {
                 Ok(()) => {}
                 Err(TrySendError::Full(_)) => return Err("the plugin is busy".into()),
                 Err(TrySendError::Disconnected(_)) => return Err("the plugin stopped".into()),
@@ -896,10 +903,10 @@ impl Runtime {
         if !Arc::ptr_eq(&s.plugin_document_token(), &r.dispatch.document) || s.script_ui.project_epoch != r.dispatch.epoch {
             return Err(OpError::new(Code::Cancelled, "the active document was replaced"));
         }
-        if let Some((key, rev)) = &r.dispatch.surface {
-            if !surface_current(&lock(&self.state), key, *rev) {
-                return Err(OpError::new(Code::Stale, "the plugin surface changed"));
-            }
+        if let Some((key, rev)) = &r.dispatch.surface
+            && !surface_current(&lock(&self.state), key, *rev)
+        {
+            return Err(OpError::new(Code::Stale, "the plugin surface changed"));
         }
         if lock(&self.suppressed).contains(&r.plugin) {
             return Err(OpError::denied("this plugin was skipped for this document"));
@@ -1120,13 +1127,13 @@ fn worker_main(
     paused: Arc<AtomicBool>,
 ) {
     enum Runner {
-        Wasm(WasmSession),
+        Wasm(Box<WasmSession>),
         Native(Helper),
     }
     let started = match program {
         Program::Wasm(p) => WasmSession::new(&p, api, grants, log).map(|mut s| {
             s.set_jobs(owner.jobs.clone());
-            Runner::Wasm(s)
+            Runner::Wasm(Box::new(s))
         }),
         Program::Native { exe, work, confinement } => {
             Helper::start(&owner.plugin, owner.version, &HelperLaunch { exe, work, confinement }, api, grants, log).map(|mut h| {
@@ -1141,10 +1148,11 @@ fn worker_main(
             log::warn!("plugin {name}: {e}");
             while let Ok(job) = rx.recv() {
                 match job {
-                    Job::Event { done: Some(d), .. } => {
-                        let _ = d.send(Err(e.to_string()));
+                    Job::Event(job) => {
+                        if let Some(d) = job.done {
+                            let _ = d.send(Err(e.to_string()));
+                        }
                     }
-                    Job::Event { .. } => {}
                     Job::Stop => break,
                 }
             }
@@ -1163,7 +1171,8 @@ fn worker_main(
             Err(RecvTimeoutError::Disconnected) => break,
         };
         match job {
-            Job::Event { dispatch, inv, event, done } => {
+            Job::Event(job) => {
+                let EventJob { dispatch, inv, event, done } = *job;
                 *lock(&context) = Some(dispatch);
                 FINISH_ERROR.with(|f| f.borrow_mut().take());
                 let r = match &mut runner {
