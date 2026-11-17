@@ -15,7 +15,7 @@ pub const APP: &str = "effectcraft";
 
 /// The contracts this build provides (B2). Keep `craft-ext-cli`'s `known_apps` table in step.
 pub fn provided() -> Provided {
-    Provided::new(&[("raster.filter", 1, 0), ("effectcraft.session", 1, 1), ("resource.preset", 1, 0), ("resource.lut", 1, 0), ("craft-theme", 1, 0)])
+    Provided::new(&[("raster.filter", 1, 0), ("effectcraft.session", 1, 2), ("resource.preset", 1, 0), ("resource.lut", 1, 0), ("craft-theme", 1, 0)])
 }
 
 thread_local! {
