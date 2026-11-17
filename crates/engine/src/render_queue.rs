@@ -595,8 +595,6 @@ impl Session {
         if self.is_rendering() {
             return Err("a render is already in progress".into());
         }
-        // B9: an effect whose plugin is missing would render as a pass-through; refuse unless the
-        // person chose to render without them.
         let (render_project, left_out) = crate::ext::render_project(&self.project, missing);
         if let Some(why) = crate::ext::missing_effects_error(&render_project) {
             return Err(why);

@@ -318,7 +318,6 @@ impl Layer {
             auto_orient,
             environment,
             environment_background,
-            // Plugin data is opaque to rendering.
             plugin_data: _,
             props,
         } = self;
