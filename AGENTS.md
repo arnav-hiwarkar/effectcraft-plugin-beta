@@ -208,3 +208,13 @@ as PhotoCraft does with `cargo xtask corpus`.
 - Workflows in `.github/workflows/` call the shared workflows in [`storytold/craft-common-actions`](https://github.com/storytold/craft-common-actions) at `@main`, with their inputs and secrets. No other jobs: if no shared workflow does what's needed, it doesn't go here.
 - Don't add or change CI in a feature or fix PR. If the existing workflows can't build or test a change, link an existing craft-common-actions issue or PR, or open a new issue, or a PR only for a small fix that is safe for every app and does not increase CI time.
 - Some workflow files here still run their own jobs. Don't add to them. Moving a job into craft-common-actions is its own task, never part of another PR, and the job stays here until a shared workflow runs it.
+
+## Suite plugin replacement policy
+
+When changing plugin implementations, app UI integration, lifecycle flows or merging
+upstream plugin/UI changes in this private beta fork, apply the user-directed
+[suite replacement rule](https://github.com/arnav-hiwarkar/craft-extensions-plugin-beta/blob/plugin-beta/docs/plugins/suite-replacement-rule.md). In the sibling beta workspace the same file is
+`../craft-extensions/docs/plugins/suite-replacement-rule.md`. Inspect and learn from
+each app's existing capabilities, migrate and verify the flows, then remove the
+superseded implementations. Keep one shared platform and one canonical adapter per
+app, coordinated with the current framework/UI work.
