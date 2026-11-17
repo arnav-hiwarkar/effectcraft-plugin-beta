@@ -715,7 +715,8 @@ fn render(s: &mut Session, p: &Value) -> Result<Value> {
         log::warn!("{e}");
     }
     let queued: std::collections::HashSet<u64> = s.project.render_queue.iter().filter(|i| i.is_queued()).map(|i| i.id).collect();
-    let ids = s.start_render(wait).map_err(EngineError::Other)?;
+    let missing = if b_p(p, "withoutMissingEffects").unwrap_or(false) { crate::ext::MissingEffects::RenderWithout } else { crate::ext::MissingEffects::Refuse };
+    let ids = s.start_render(wait, missing).map_err(EngineError::Other)?;
     // Source refusals fail before the exporter starts. Report them just like encoding
     // failures, so CLI/MCP callers do not mistake a partly refused queue for full success.
     let items: Vec<Value> = s
@@ -1107,7 +1108,15 @@ pub fn specs() -> Vec<CommandSpec> {
         cmd!("render.saveCurrentPreview", "Save Current Preview...", ["Composition"], None, "{comp?, path}", has_comp, save_current_preview),
         cmd!("renderQueue.move", "Move in Render Queue", [], None, "{item?|index?, to: n (1-based)}", has_items, move_item),
         cmd!("renderQueue.duplicate", "Duplicate Render Item", [], None, "{item?|index?}", has_items, duplicate),
-        cmd!("renderQueue.render", "Render", [], None, "{wait?: bool (default true; the UI renders in the background)}", has_queued, render),
+        cmd!(
+            "renderQueue.render",
+            "Render",
+            [],
+            None,
+            "{wait?: bool (default true; the UI renders in the background), withoutMissingEffects?: bool (render a copy without effects whose plugin is missing instead of refusing; logged)}",
+            has_queued,
+            render
+        ),
         cmd!("renderQueue.stop", "Stop Rendering", [], None, "{}", rendering, stop),
         query!("renderQueue.list", "Render Queue Items", "{}", list),
         query!("renderQueue.templates", "Render Templates", "{}", templates),

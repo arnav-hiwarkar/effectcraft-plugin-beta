@@ -193,7 +193,7 @@ fn render_runs_through_the_offload() {
         Session { exporter: Some(Arc::new(crate::rq_tests::MockExporter { log: Default::default() })), offload: Some(Arc::new(Inline)), ..Default::default() };
     s.execute("file.openDemoProject", serde_json::json!({})).unwrap();
     s.execute("renderQueue.add", serde_json::json!({"output": "/x.gif"})).unwrap();
-    let ids = s.start_render(false).unwrap();
+    let ids = s.start_render(false, crate::ext::MissingEffects::Refuse).unwrap();
     // (the inline offload has replied already; replies are applied when polled)
     s.poll_render();
     assert!(s.render_job.is_none());
@@ -202,7 +202,7 @@ fn render_runs_through_the_offload() {
     assert!(it.last_output.as_deref().is_some_and(|o| o.ends_with("x.gif")));
     // `wait` renders inline.
     s.execute("renderQueue.add", serde_json::json!({"output": "/y.gif"})).unwrap();
-    s.start_render(true).unwrap();
+    s.start_render(true, crate::ext::MissingEffects::Refuse).unwrap();
     assert!(s.render_job.is_none() || s.render_job.as_ref().unwrap().remote.is_none());
 }
 
@@ -285,7 +285,7 @@ fn cancelling_offloaded_jobs() {
     assert!(s.revision > rev);
     // Render: the queued items become User Stopped.
     s.execute("renderQueue.add", serde_json::json!({"output": "/a.gif"})).unwrap();
-    let ids = s.start_render(false).unwrap();
+    let ids = s.start_render(false, crate::ext::MissingEffects::Refuse).unwrap();
     assert!(s.is_rendering());
     assert!(s.stop_render());
     s.poll_render();

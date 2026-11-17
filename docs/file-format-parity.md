@@ -32,7 +32,7 @@ trips and renders, checked by tests, not against After Effects), **partial** (na
 | Binary scripts `.jsxbin` | R (run) | none | — | No public specification: out of scope | — |
 | Motion graphics JSON `.mgjson` | R (data) | none | none | Media Browser lists it; import accepts only `.json` / `.csv` / `.tsv` data | — |
 | Captions `.aecap`, graphics `.aegraphic` | R/W | none | none | — | — |
-| Native `.ecproj` | — | yes | yes | Versioned JSON; schema migrations tested; absolute footage paths, no relinking (gap 18) | engine project tests |
+| Native `.ecproj` | — | yes | yes | Versioned JSON; schema migrations tested; absolute footage paths, no relinking (gap 18); plugin data in optional `plugin_data` maps on the project and layers (schema 2 unchanged: older files open with none, and the data of a missing plugin is saved unchanged) | engine project tests; `effectcraft-plugins` `plugin_data_*` |
 
 ## Footage: stills
 

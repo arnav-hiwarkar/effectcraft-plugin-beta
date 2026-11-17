@@ -71,7 +71,7 @@ fn render_project(host: &Session, path: &Path) -> Value {
         if queued == 0 {
             return Ok(json!({"state": "done", "items": [], "note": "nothing queued"}));
         }
-        s.start_render(true)?;
+        s.start_render(true, crate::ext::MissingEffects::Refuse)?;
         let items: Vec<Value> = s
             .project
             .render_queue

@@ -954,5 +954,6 @@ pub fn layer(project: &mut Project, comp: &Comp, name: &str, source: LayerSource
         environment_background: false,
         auto_orient,
         props: root,
+        plugin_data: Default::default(),
     }
 }

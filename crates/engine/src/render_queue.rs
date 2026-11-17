@@ -587,15 +587,24 @@ impl Session {
     /// Start rendering every queued item, refusing outputs that replace footage, proxies or
     /// the project file. Other existing outputs keep the exporter's usual replacement policy.
     /// `wait`: block until done, otherwise render in the background and poll regularly.
-    pub fn start_render(&mut self, wait: bool) -> Result<Vec<u64>, String> {
+    /// `missing`: refuse when a plugin effect is missing, or render without those effects (logged
+    /// and announced; the project keeps them).
+    pub fn start_render(&mut self, wait: bool, missing: crate::ext::MissingEffects) -> Result<Vec<u64>, String> {
         let offload = self.offload.clone().filter(|_| !wait);
         let wait = wait || (cfg!(target_arch = "wasm32") && offload.is_none());
         if self.is_rendering() {
             return Err("a render is already in progress".into());
         }
-        // B9: an effect whose plugin is missing would render as a pass-through; refuse.
-        if let Some(why) = crate::ext::missing_effects_error(&self.project) {
+        // B9: an effect whose plugin is missing would render as a pass-through; refuse unless the
+        // person chose to render without them.
+        let (render_project, left_out) = crate::ext::render_project(&self.project, missing);
+        if let Some(why) = crate::ext::missing_effects_error(&render_project) {
             return Err(why);
+        }
+        if !left_out.is_empty() {
+            let message = format!("Rendering without missing plugin effects: {}", left_out.join(", "));
+            log::warn!("{message}");
+            self.events.push(Event::Toast { message, error: false });
         }
         self.poll_render();
         let exporter = self.exporter.clone().ok_or("export is not available in this build")?;
@@ -639,8 +648,8 @@ impl Session {
             let inbox = Arc::new(crate::offload::Inbox::default());
             let req = crate::offload::WorkerRequest {
                 id,
-                project: self.project.to_json(),
-                files: crate::offload::footage_files(&self.project),
+                project: render_project.to_json(),
+                files: crate::offload::footage_files(&render_project),
                 job: crate::offload::WorkerJob::Render { items },
             };
             off.start(req, inbox.clone())?;
@@ -651,7 +660,7 @@ impl Session {
             return Ok(ids);
         }
         let work = Work {
-            project: self.project.clone(),
+            project: render_project,
             footage: self.footage.clone(),
             expr: self.expr.clone(),
             accel: self.accel.clone(),

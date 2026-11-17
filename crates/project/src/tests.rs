@@ -191,6 +191,9 @@ fn same_content_sees_allocated_ids_and_comp_edits() {
     let mut r = p.clone();
     r.settings.bit_depth = crate::BitDepth::Bpc16;
     assert!(!r.same_content(&p));
+    let mut r = p.clone();
+    r.plugin_data.insert("io.github.alice.rig".into(), serde_json::json!({"bones": 3}));
+    assert!(!r.same_content(&p), "plugin data is content");
 }
 
 #[test]

@@ -522,6 +522,8 @@ impl Text {
             auto_orient,
             environment,
             environment_background,
+            // Plugin data draws nothing.
+            plugin_data: _,
             props,
         } = l;
         self.field("layer", id.0);

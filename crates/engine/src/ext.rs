@@ -14,7 +14,7 @@ use serde_json::{Value, json};
 use std::sync::Arc;
 
 use crate::{CommandSpec, EngineError, Event, Result, Session, cmd};
-use effectcraft_project::{GroupKind, Project};
+use effectcraft_project::{GroupKind, ItemId, Project};
 
 /// A command a plugin contributes (`plugin.<plugin id>.<contribution>`).
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -198,6 +198,37 @@ pub fn missing_rendering_effects(project: &Project) -> Vec<(String, String)> {
     out
 }
 
+/// What a final render does with effects whose plugin is missing.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum MissingEffects {
+    /// Refuse to start, naming the plugins ([`missing_effects_error`]).
+    #[default]
+    Refuse,
+    /// Render a copy of the project without them; the project keeps them.
+    RenderWithout,
+}
+
+/// The project to render under `choice`: unchanged for [`MissingEffects::Refuse`], otherwise a
+/// copy without the [`missing_rendering_effects`] instances, with the effect ids it left out.
+pub fn render_project(project: &Arc<Project>, choice: MissingEffects) -> (Arc<Project>, Vec<String>) {
+    let missing = missing_rendering_effects(project);
+    if choice == MissingEffects::Refuse || missing.is_empty() {
+        return (project.clone(), vec![]);
+    }
+    let left_out: Vec<String> = missing.into_iter().map(|(effect, _)| effect).collect();
+    let mut copy = (**project).clone();
+    let ids: Vec<ItemId> = copy.comps().map(|(id, _)| *id).collect();
+    for id in ids {
+        let Some(comp) = copy.comp_mut(id) else { continue };
+        for layer in comp.layers.iter_mut() {
+            if let Some(fx) = layer.props.sub_mut("effects") {
+                fx.children.retain(|n| !matches!(n, effectcraft_project::Node::Group(g) if matches!(&g.kind, GroupKind::Effect { effect } if left_out.contains(effect))));
+            }
+        }
+    }
+    (Arc::new(copy), left_out)
+}
+
 /// The final-render refusal for [`missing_rendering_effects`], naming the install command.
 pub fn missing_effects_error(project: &Project) -> Option<String> {
     for (_, comp) in project.comps() {
@@ -223,7 +254,7 @@ pub fn missing_effects_error(project: &Project) -> Option<String> {
     let effects: Vec<&str> = missing.iter().map(|(e, _)| e.as_str()).collect();
     let install: Vec<String> = plugins.iter().map(|p| format!("effectcraft-cli plugin install {p}` then `effectcraft-cli plugin setup {p} --all")).collect();
     Some(format!(
-        "this project uses effects from plugins that are not installed, are turned off, or were stopped (withdrawn, kill-listed or changed) ({}); the render would differ, so it was not started. Install and enable them (Settings ▸ Plugins, or `{}`); `effectcraft-cli plugin project <file>` explains each one",
+        "this project uses effects from plugins that are not installed, are turned off, or were stopped (withdrawn, kill-listed or changed) ({}); the render would differ, so it was not started. Install and enable them (Settings ▸ Plugins, or `{}`); `effectcraft-cli plugin project <file>` explains each one. To render without them, use Render without missing effects in the Render Queue or `effectcraft-cli render --without-missing-effects`",
         effects.join(", "),
         install.join("`; `")
     ))

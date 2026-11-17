@@ -120,12 +120,14 @@ const USAGE: &str = "usage: effectcraft-cli <info|commands|exec|run|props|get|se
          [--jpeg-quality N] [--bitrate KBPS] [--prores PROFILE] [--audio auto|on|off]
          [--profile main|main10] [--level auto|4.1] [--rate-control bitrate|quality] [--video-quality N]
          [--keyint FRAMES] [--webm-codec vp9|av1] [--audio-bitrate KBPS] [--opus-app audio|voice]
-         [--exr-compression C] [--exr-depth half|float] | --queue
+         [--exr-compression C] [--exr-depth half|float] [--without-missing-effects] | --queue
                                            (formats h264|hevc|av1|prores|webm|png|jpeg|tiff|exr|tga|gif|wav|aiff;
                                            --profile..--keyint: HEVC / AV1, --audio-bitrate/--opus-app: WebM Opus;
                                            --exr-compression none|rle|zips|zip|piz|pxr24|b44|b44a|dwaa|dwab
                                            (default zip; pxr24 on float, b44/b44a on half and dwaa/dwab are lossy),
-                                           --exr-depth (default float): OpenEXR)
+                                           --exr-depth (default float): OpenEXR;
+                                           --without-missing-effects renders without effects whose plugin
+                                           is missing instead of refusing, and names them on stderr)
                                            a relative --out is relative to the working directory
                                            --progress: progress lines on stderr when it is not a terminal
                                            (progress <frames done> <total> <seconds elapsed> <seconds left|->)
@@ -231,6 +233,7 @@ const FLAGS: &[&str] = &[
     "--autosave",
     "--keep-going",
     "--progress",
+    "--without-missing-effects",
 ];
 
 struct Args {
@@ -983,7 +986,14 @@ fn render(args: &Args, json_out: bool) -> Result<(), Failure> {
         );
     }
     let attempted: std::collections::HashSet<u64> = s.project.render_queue.iter().filter(|i| i.is_queued()).map(|i| i.id).collect();
-    s.execute("renderQueue.render", json!({"wait": false})).map_err(err)?;
+    let without = args.flag("--without-missing-effects");
+    s.execute("renderQueue.render", json!({"wait": false, "withoutMissingEffects": without})).map_err(err)?;
+    for message in s.events.iter().filter_map(|e| match e {
+        effectcraft_engine::Event::Toast { message, .. } if message.starts_with("Rendering without missing plugin effects") => Some(message.clone()),
+        _ => None,
+    }) {
+        note!("{message}");
+    }
     let tty = std::io::IsTerminal::is_terminal(&std::io::stderr());
     // `--progress`: one line per update for a program reading stderr (a terminal gets the live line).
     let lines = args.flag("--progress") && !tty;
@@ -1645,9 +1655,9 @@ mod tests {
         assert_eq!(err(&["exec", "comp.new", "--bogus", "--empty", "--saveas", "z.ecproj"]), "unknown options `--bogus`, `--saveas`");
         assert_eq!(err(&["render", "--bogus=1"]), "unknown option `--bogus`");
         assert_eq!(err(&["info", "--json=yes"]), "--json takes no value");
-        let a = parse(&["render", "t.ecproj", "--comp=Main", "--work-area", "--out", "x.mp4", "--json"]).unwrap();
+        let a = parse(&["render", "t.ecproj", "--comp=Main", "--work-area", "--out", "x.mp4", "--json", "--without-missing-effects"]).unwrap();
         assert_eq!((a.project.as_deref(), a.opt("--comp"), a.opt("--out")), (Some("t.ecproj"), Some("Main"), Some("x.mp4")));
-        assert!(a.flag("--work-area") && a.flag("--json"));
+        assert!(a.flag("--work-area") && a.flag("--json") && a.flag("--without-missing-effects"));
     }
 
     /// `std::env::args` panicked on an argument that is not Unicode; it is a usage error naming

@@ -318,6 +318,8 @@ impl Layer {
             auto_orient,
             environment,
             environment_background,
+            // Plugin data is opaque to rendering.
+            plugin_data: _,
             props,
         } = self;
         *id == o.id
@@ -532,6 +534,10 @@ pub struct Layer {
     pub environment_background: bool,
     /// The property tree (Masks, Effects, Transform, Text, Contents, Camera/Light options…).
     pub props: PropGroup,
+    /// Data plugins keep on this layer, by plugin id: one JSON object each, opaque here and saved
+    /// unchanged when the plugin is missing.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub plugin_data: std::collections::BTreeMap<String, serde_json::Value>,
 }
 
 /// The name a text layer takes from its text: the first 40 characters of the first line. A line

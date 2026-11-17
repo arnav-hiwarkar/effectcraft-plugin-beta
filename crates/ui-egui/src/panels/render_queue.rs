@@ -529,6 +529,19 @@ fn current_render_strip(app: &mut EffectcraftApp, ui: &mut egui::Ui, p: &egui::P
         actions.push(("renderQueue.render", json!({"wait": false})));
     }
     app.auto.add("renderQueue.render", render_b, "Render");
+    let missing = if can_render { effectcraft_engine::ext::missing_rendering_effects(&app.session.project) } else { Vec::new() };
+    if !missing.is_empty() {
+        let without_label = tr("Render without missing effects");
+        let without_b = Rect::from_min_size(pos2(x0 + 130.0, top.min.y + 5.0), vec2(220.0, 22.0));
+        let names: Vec<&str> = missing.iter().map(|(effect, _)| effect.as_str()).collect();
+        let without_resp = widgets::text_button(ui, without_b, without_label, false, &t, egui::Id::unique("rq-render-without-missing"))
+            .on_hover_text(format!("{} {}", tr("Renders a copy of the project without these effects; the project keeps them:"), names.join(", ")));
+        a11y::button(&without_resp, without_label, true);
+        if without_resp.clicked() {
+            actions.push(("renderQueue.render", json!({"wait": false, "withoutMissingEffects": true})));
+        }
+        app.auto.add("renderQueue.renderWithoutMissing", without_b, "Render without missing effects");
+    }
     // Notify (sound + notification when the queue finishes).
     let notify = app.session.project.render_prefs.notify;
     let nb = Rect::from_min_size(pos2(render_b.min.x - 8.0 - 2.0 * bw - 8.0, render_b.min.y + 4.0), vec2(18.0, 18.0));

@@ -73,6 +73,10 @@ pub struct Project {
     /// stored). Projects saved before plugins existed read as an empty list.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub plugins: Vec<PluginRef>,
+    /// Data plugins keep with the whole project, by plugin id: one JSON object each, opaque here
+    /// and saved unchanged when the plugin is missing (see [`Layer::plugin_data`] for layers).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub plugin_data: BTreeMap<String, serde_json::Value>,
 }
 
 /// One entry of [`Project::plugins`]: `{id, version, sha256, source, name}` (the shared Craft
