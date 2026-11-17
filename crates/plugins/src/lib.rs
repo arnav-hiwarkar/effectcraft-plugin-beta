@@ -73,10 +73,10 @@ mod native {
         slot().lock().unwrap_or_else(PoisonError::into_inner).clone()
     }
 
-    /// Stops every plugin worker and native helper (when the app quits).
     pub fn stop() {
         if let Some(rt) = runtime() {
             rt.unload("EffectCraft is closing.");
+            rt.end_run();
         }
     }
 

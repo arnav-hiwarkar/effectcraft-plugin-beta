@@ -1,15 +1,10 @@
-//! Craft plugins in the desktop UI: the host-drawn plugin panels and windows (from
-//! `craft_ext_core::ui::Node` trees), Settings ▸ Plugins (the shared `craft_ext_ui::ManagerView`)
-//! and the "This project uses N plugins" prompt. Plugin code never runs here: widget changes go to
-//! the plugin's worker as `ui` events (`plugin.uiEvent`), with the tree revision so stale events
-//! are dropped.
-
 use std::cell::RefCell;
 use std::sync::Arc;
 
 use craft_ext_store::Manager;
 use craft_ext_ui::plugin_ui::{Host, PluginUi};
 use craft_ext_ui::{ManagerView, ProjectPrompt};
+use effectcraft_plugins::runtime::{JobInfo, JobState};
 use serde_json::{Value, json};
 
 use crate::EffectcraftApp;
@@ -41,8 +36,6 @@ fn manager(st: &mut State) -> Option<Arc<Manager>> {
     st.manager.clone()
 }
 
-/// Every frame: serve plugin requests, deliver app events, schedule recurring catalogue/kill-list refresh, and pick
-/// up a project-open prompt.
 pub fn frame(app: &mut EffectcraftApp, ctx: &egui::Context) {
     ctx.request_repaint_after(std::time::Duration::from_secs(1));
     STATE.with(|st| {
@@ -80,13 +73,11 @@ pub fn frame(app: &mut EffectcraftApp, ctx: &egui::Context) {
             st.prompt = Some(ProjectPrompt::new(statuses));
         }
     });
-    // Plugin work arrives from workers: keep frames coming while plugins are loaded.
     if !app.session.plugins.as_ref().is_none_or(|p| p.surfaces().is_empty() && p.commands().is_empty()) {
         ctx.request_repaint_after(std::time::Duration::from_millis(100));
     }
 }
 
-/// Plugin panels and windows, and the project prompt (after the dialogs).
 pub fn show(app: &mut EffectcraftApp, ctx: &egui::Context) {
     STATE.with(|st| {
         let mut st = st.borrow_mut();
@@ -104,6 +95,10 @@ pub fn show(app: &mut EffectcraftApp, ctx: &egui::Context) {
             st.prompt_plugins.clear();
         }
     });
+    if let Some(rt) = effectcraft_plugins::runtime() {
+        unclean_exit_notice(&rt, ctx);
+        jobs_window(&rt, ctx);
+    }
     let Some(rt) = app.session.plugins.clone() else { return };
     let mut events: Vec<(String, u64, String, Value)> = Vec::new();
     let mut closed: Vec<String> = Vec::new();
@@ -130,15 +125,101 @@ pub fn show(app: &mut EffectcraftApp, ctx: &egui::Context) {
     }
 }
 
-/// Settings ▸ Plugins: the shared manager (Browse / Installed / Updates / Problems / setup).
+fn unclean_exit_notice(rt: &effectcraft_plugins::runtime::Runtime, ctx: &egui::Context) {
+    let names = rt.after_unclean_exit();
+    if names.is_empty() {
+        return;
+    }
+    let mut answer = None;
+    egui::Window::new(crate::i18n::tr("Plugins after an unexpected close"))
+        .id(egui::Id::unique("plugin-unclean-exit"))
+        .collapsible(false)
+        .resizable(false)
+        .show(ctx, |ui| {
+            ui.label(format!("{} {}", crate::i18n::tr("EffectCraft closed unexpectedly while these plugins were running:"), names.join(", ")));
+            ui.horizontal(|ui| {
+                if ui.button(crate::i18n::tr("Start without these plugins")).clicked() {
+                    answer = Some(true);
+                }
+                if ui.button(crate::i18n::tr("Keep them on")).clicked() {
+                    answer = Some(false);
+                }
+            });
+        });
+    if let Some(start_without) = answer
+        && let Err(e) = rt.answer_unclean_exit(start_without)
+    {
+        log::warn!("plugins: {e}");
+    }
+}
+
+fn job_status(job: &JobInfo) -> String {
+    match &job.state {
+        JobState::Running if job.note.is_empty() => crate::i18n::tr("Working…").to_string(),
+        JobState::Running => job.note.clone(),
+        JobState::Done(_) => crate::i18n::tr("Done").to_string(),
+        JobState::Failed(why) => format!("{}: {why}", crate::i18n::tr("Failed")),
+        JobState::Cancelled => crate::i18n::tr("Cancelled").to_string(),
+    }
+}
+
+fn jobs_window(rt: &effectcraft_plugins::runtime::Runtime, ctx: &egui::Context) {
+    let jobs = rt.jobs.list();
+    if jobs.is_empty() {
+        return;
+    }
+    if jobs.iter().any(|j| !j.state.finished()) {
+        ctx.request_repaint_after(std::time::Duration::from_millis(100));
+    }
+    let names = rt.plugin_names();
+    egui::Window::new(crate::i18n::tr("Plugin jobs"))
+        .id(egui::Id::unique("plugin-jobs"))
+        .anchor(egui::Align2::RIGHT_BOTTOM, egui::vec2(-12.0, -36.0))
+        .default_open(true)
+        .resizable(false)
+        .show(ctx, |ui| {
+            for job in &jobs {
+                let plugin = names.iter().find(|(id, _)| id == &job.plugin).map_or_else(|| job.plugin.to_string(), |(_, n)| n.clone());
+                ui.horizontal(|ui| {
+                    ui.strong(&job.label);
+                    ui.weak(plugin);
+                });
+                ui.horizontal(|ui| {
+                    if !job.state.finished() {
+                        match job.progress {
+                            Some(p) => {
+                                ui.add(egui::ProgressBar::new(p).desired_width(140.0).show_percentage());
+                            }
+                            None => {
+                                ui.spinner();
+                            }
+                        }
+                    }
+                    ui.label(job_status(job));
+                    if !job.state.finished() && job.cancellable && ui.small_button(crate::i18n::tr("Cancel")).clicked() {
+                        rt.jobs.cancel(job.id, false);
+                    }
+                });
+            }
+            if jobs.iter().any(|j| j.state.finished()) && ui.button(crate::i18n::tr("Clear finished")).clicked() {
+                rt.jobs.clear_finished();
+            }
+        });
+}
+
 pub fn manager_page(app: &mut EffectcraftApp, ui: &mut egui::Ui) {
     if effectcraft_plugins::runtime().is_some_and(|r| r.safe_mode()) {
         ui.label(crate::i18n::tr("Safe mode: no plugin code runs this session. Changes apply after a restart without --safe-mode."));
     }
     if let Some(rt) = app.session.plugins.clone() {
+        let turned_off = effectcraft_plugins::runtime().map(|r| r.turned_off()).unwrap_or_default();
         for id in rt.paused() {
+            let reason = turned_off
+                .iter()
+                .find(|t| t.plugin == id)
+                .map_or_else(|| crate::i18n::tr("paused after repeated failures").to_string(), |t| format!("{}: {}", t.name, t.reason));
             ui.horizontal(|ui| {
-                ui.label(format!("{id}: paused after repeated failures"));
+                ui.label(format!("{id}: {reason}"));
                 let r = ui.button(crate::i18n::tr("Resume"));
                 app.auto.add(&format!("plugin.resume.{id}"), r.rect, "Resume");
                 if r.clicked() {

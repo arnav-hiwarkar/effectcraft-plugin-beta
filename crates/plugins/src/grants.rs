@@ -56,7 +56,14 @@ impl StoreGrants {
         }
     }
 
-    /// How often the store changed since start ([`StoreGrants::view`] refreshes it).
+    pub fn reload(&self) {
+        let mut v = self.view.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Ok(fresh) = GrantView::open(&self.root, self.app.clone()) {
+            *v = fresh;
+            self.changes.fetch_add(1, Ordering::AcqRel);
+        }
+    }
+
     pub fn changes(&self) -> u64 {
         drop(self.view());
         self.changes.load(Ordering::Acquire)
