@@ -146,8 +146,16 @@ fn plugin_data(s: &mut Session, scope: &Scope, op: &str, args: &Value) -> Result
             c.layer(id).ok_or_else(|| OpError::new(Code::NotFound, "no such layer"))?.plugin_data.get(key).cloned()
         }
     };
+    let size = |v: &Value| PluginData::from_json(Some(v)).bytes();
+    let on_layers: usize = s
+        .project
+        .comps()
+        .flat_map(|(cid, c)| c.layers.iter().filter(move |l| layer != Some((*cid, l.id))).filter_map(|l| l.plugin_data.get(key)))
+        .map(size)
+        .sum();
+    let on_project = if layer.is_some() { s.project.plugin_data.get(key).map_or(0, size) } else { 0 };
     let mut data = PluginData::from_json(saved.as_ref());
-    let out = handle(op, args, &mut data)?;
+    let out = handle(op, args, &mut data, on_layers + on_project)?;
     let next = data.to_json();
     if op == "project.data.set" && next != saved {
         s.edit(&format!("{} data", scope.plugin_name), None, |p, _| {
@@ -295,18 +303,37 @@ pub fn run(s: &mut Session, scope: &Scope, op: &str, args: Value, own_panels: &[
 }
 
 fn ease_keys(s: &mut Session, scope: &Scope, args: &Value) -> Result<Value, OpError> {
+    use effectcraft_engine::{KeyRef, time::Tick};
     let cid = comp(scope)?;
-    let layer = args.get("layer").and_then(Value::as_u64).ok_or_else(|| invalid("layer id required"))?;
+    let layer = LayerId(args.get("layer").and_then(Value::as_u64).ok_or_else(|| invalid("layer id required"))?);
     let path = text(args, "path", 512)?;
-    if !s.project.comp(cid).is_some_and(|c| c.layer(LayerId(layer)).is_some()) {
-        return Err(invalid("layer not in captured composition"));
-    }
     let times = args.get("times").and_then(Value::as_array).filter(|t| !t.is_empty() && t.len() <= 1000).ok_or_else(|| invalid("times must list 1 to 1000 key times in seconds"))?;
-    let keys: Vec<Value> = times
+    let c = s.project.comp(cid).ok_or_else(|| OpError::new(Code::Stale, "the composition is gone"))?;
+    let l = c.layer(layer).ok_or_else(|| OpError::new(Code::NotFound, "no such layer in the captured composition"))?;
+    let prop = l.props.prop(path).ok_or_else(|| OpError::new(Code::NotFound, format!("no property {path}")))?;
+    let frame = c.frame_rate.frame_duration().0 as f64 * 100.0 / l.stretch.abs().max(1e-9);
+    let keys = times
         .iter()
-        .map(|t| t.as_f64().filter(|t| t.is_finite()).map(|t| json!({"layer": layer, "path": path, "time": t})).ok_or_else(|| invalid("each time must be a number of seconds")))
-        .collect::<Result<_, _>>()?;
-    s.execute("keys.select", json!({"comp": cid.0, "keys": keys})).map_err(engine)?;
+        .map(|t| {
+            let at = t.as_f64().filter(|t| t.is_finite()).map(Tick::from_seconds_f64).ok_or_else(|| invalid("each time must be a number of seconds"))?;
+            prop.keys
+                .iter()
+                .map(|k| k.time)
+                .filter(|kt| 2.0 * (kt.0 - at.0).abs() as f64 <= frame)
+                .min_by_key(|kt| (kt.0 - at.0).abs())
+                .map(|time| KeyRef { layer, prop: prop.uid, time })
+                .ok_or_else(|| OpError::new(Code::NotFound, format!("no key of {path} within half a frame of {t} s")))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let selected = std::mem::replace(&mut s.state.selected_keys, keys);
+    let active = s.state.active_comp.replace(cid);
+    let out = ease_selected(s, args);
+    s.state.selected_keys = selected;
+    s.state.active_comp = active;
+    out
+}
+
+fn ease_selected(s: &mut Session, args: &Value) -> Result<Value, OpError> {
     if let Some(preset) = args.get("preset") {
         let which = match preset.as_str() {
             Some("easy") => "both",
@@ -409,6 +436,21 @@ mod tests {
         assert!((keys(&s)[1].in_ease[0].influence - 0.8).abs() < 1e-9);
         assert!(run(&mut s, &scope, "prop.ease", json!({"layer":id,"path":"transform/opacity","times":[],"preset":"easy"}), &[]).is_err());
         assert!(run(&mut s, &scope, "prop.ease", json!({"layer":id,"path":"transform/opacity","times":[0],"preset":"bounce"}), &[]).is_err());
+        let near = run(&mut s, &scope, "prop.ease", json!({"layer":id,"path":"transform/opacity","times":[0.5],"interpolation":"hold"}), &[]);
+        assert_eq!(near.err().map(|e| e.code), Some(Code::NotFound), "a time far from every key eases nothing");
+        assert!(keys(&s).iter().all(|k| k.in_interp == effectcraft_keyframe::Interp::Bezier));
+
+        s.execute("comp.new", json!({"width":16,"height":16})).unwrap();
+        assert_ne!(s.active_comp_id(), scope.comp);
+        let other = s.execute("layer.newNull", json!({})).unwrap()["layer"].as_u64().unwrap();
+        s.execute("prop.addKey", json!({"layer":other,"path":"transform/opacity","value":50,"time":0})).unwrap();
+        s.execute("keys.select", json!({"keys":[{"layer":other,"path":"transform/opacity","time":0}]})).unwrap();
+        let chosen = s.state.selected_keys.clone();
+        assert_eq!(chosen.len(), 1);
+        run(&mut s, &scope, "prop.ease", json!({"layer":id,"path":"transform/opacity","times":[1.01],"interpolation":"hold"}), &[]).unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(keys(&s).iter().map(|k| k.in_interp).collect::<Vec<_>>(), vec![effectcraft_keyframe::Interp::Bezier, effectcraft_keyframe::Interp::Hold], "the key within half a frame of 1.01 s in the captured composition");
+        assert_eq!(s.state.selected_keys, chosen, "the person's key selection comes back");
+        assert_ne!(s.active_comp_id(), scope.comp, "the active composition stays the person's");
     }
 
     #[test]

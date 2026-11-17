@@ -1418,6 +1418,7 @@ name = "craft-ext-ui"
 version = "0.1.0"
 dependencies = [
  "craft-ext-core",
+ "craft-ext-host",
  "craft-ext-manager",
  "craft-ext-store",
  "egui",

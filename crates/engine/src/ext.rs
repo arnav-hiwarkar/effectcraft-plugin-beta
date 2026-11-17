@@ -46,9 +46,6 @@ pub struct PluginSurface {
 /// session; plugin code itself runs on workers and reaches the document only through
 /// [`PluginRuntime::pump`].
 pub trait PluginRuntime: Send + Sync {
-    fn paused(&self) -> Vec<String> {
-        Vec::new()
-    }
     fn selected_tool(&self) -> Option<String> {
         None
     }
@@ -59,9 +56,6 @@ pub trait PluginRuntime: Send + Sync {
     /// Whether a plugin tool gesture holds an open edit group (other edits must wait for it).
     fn gesture_active(&self) -> bool {
         false
-    }
-    fn resume(&self, _s: &mut Session, _id: &str) -> std::result::Result<(), String> {
-        Err("resume unavailable".into())
     }
 
     /// Commands of enabled contributions.
@@ -309,11 +303,6 @@ fn ui_event(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(Value::Null)
 }
 
-fn resume(s: &mut Session, p: &Value) -> Result<Value> {
-    let id = p.get("id").and_then(Value::as_str).ok_or_else(|| crate::commands::bad("plugin.resume", "missing id"))?;
-    runtime(s, "plugin.resume")?.resume(s, id).map_err(EngineError::Other)?;
-    Ok(Value::Null)
-}
 fn tool_event(s: &mut Session, p: &Value) -> Result<Value> {
     let phase = p
         .get("phase")
@@ -328,7 +317,6 @@ fn tool_event(s: &mut Session, p: &Value) -> Result<Value> {
 }
 pub(crate) fn specs() -> Vec<CommandSpec> {
     vec![
-        cmd!("plugin.resume", "Resume Plugin", [], None, "{id}", crate::commands::always, resume),
         cmd!("plugin.toolEvent", "Plugin Tool Event", [], None, "{phase,at:[x,y],modifiers?}", crate::commands::always, tool_event),
         crate::query!(
             "plugin.list",

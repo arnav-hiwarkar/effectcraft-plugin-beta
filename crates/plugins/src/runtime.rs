@@ -16,14 +16,15 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
 use craft_ext_core::id::{AppId, ExtensionId};
-use craft_ext_core::manifest::{Contribution, ContributionKind, Manifest, NativeMode, Runtime as Execution};
+use craft_ext_core::manifest::{Contribution, ContributionKind, Manifest};
 use craft_ext_core::permission::Permission;
 use craft_ext_core::project::{PluginRef, Source, Status};
 use craft_ext_core::version::Version;
 use craft_ext_host::api::{AppApi, AppContract, Code, Grants, Invocation, OpError};
-pub use craft_ext_host::jobs::{JobBoard, JobInfo, JobState};
-use craft_ext_host::native::{Confinement, Helper, HelperLaunch};
-use craft_ext_host::wasm::{LogFn, MAX_MODULE_BYTES, Plugin, Session as WasmSession};
+use craft_ext_host::jobs::{JobBoard, JobInfo};
+use craft_ext_host::native::{Helper, HelperLaunch, Launch, platform};
+use craft_ext_host::policy::Strikes;
+use craft_ext_host::wasm::{LogFn, MAX_MODULE_BYTES, Plugin, PluginError, Session as WasmSession};
 use craft_ext_store::Manager;
 use craft_ext_store::state::Origin;
 use craft_ext_store::view::GrantView;
@@ -181,34 +182,9 @@ enum Job {
     Stop,
 }
 
-#[derive(Clone)]
 enum Program {
     Wasm(Plugin),
-    Native { exe: PathBuf, work: PathBuf, confinement: Confinement },
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub enum Launch {
-    Wasm(PathBuf),
-    Native { exe: PathBuf, confinement: Confinement },
-}
-
-impl Launch {
-    pub fn plan(manifest: &Manifest, c: &Contribution, release: &Path, data: &Path) -> Result<Self, String> {
-        match manifest.runtime(c) {
-            Execution::Data => Err("no module".into()),
-            Execution::Wasm(module) => Ok(Self::Wasm(release.join(module))),
-            Execution::Native(mode) => {
-                let native = manifest.native.as_ref().ok_or("no native helper")?;
-                let exe = native.executables.get(&platform()).ok_or("no native executable for this platform")?;
-                let confinement = match mode {
-                    NativeMode::Full => Confinement::Full,
-                    NativeMode::Restricted => Confinement::Restricted { release: release.to_path_buf(), data: data.to_path_buf() },
-                };
-                Ok(Self::Native { exe: release.join(exe), confinement })
-            }
-        }
-    }
+    Native(HelperLaunch),
 }
 
 #[derive(Clone)]
@@ -220,18 +196,7 @@ struct Owner {
     jobs: Arc<JobBoard>,
 }
 
-pub const PAUSE_REASON: &str = "paused after 3 failures in a row";
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct TurnedOff {
-    pub plugin: String,
-    pub name: String,
-    pub reason: String,
-}
-
 struct Worker {
-    paused: Arc<AtomicBool>,
-    program: Program,
     tx: SyncSender<Job>,
 }
 
@@ -322,6 +287,7 @@ struct State {
     store_changes: u64,
     selected_tool: Option<SessionContribution>,
     unclean: Vec<ExtensionId>,
+    problems: Vec<(ExtensionId, String)>,
     gesture: Option<Gesture>,
     overlays: BTreeMap<String, Value>,
 }
@@ -363,6 +329,8 @@ pub struct Runtime {
     next_rev: AtomicU64,
     pub jobs: Arc<JobBoard>,
     run_begun: AtomicBool,
+    document: Mutex<Option<(Arc<()>, String)>>,
+    documents: AtomicU64,
 }
 
 fn make_log() -> LogFn {
@@ -375,11 +343,6 @@ fn make_log() -> LogFn {
             _ => log::debug!("plugin {plugin}: {text}"),
         }
     })
-}
-
-/// The platform name native packages use (`linux-x86_64` …).
-pub fn platform() -> String {
-    craft_ext_host::native::platform()
 }
 
 impl Runtime {
@@ -407,6 +370,8 @@ impl Runtime {
             next_rev: AtomicU64::new(1),
             jobs: JobBoard::new(),
             run_begun: AtomicBool::new(false),
+            document: Mutex::new(None),
+            documents: AtomicU64::new(0),
         })
     }
 
@@ -458,16 +423,17 @@ impl Runtime {
         if self.safe {
             return;
         }
-        let enabled = match self.grants.view().and_then(|v| v.enabled_contributions(&self.app).map_err(|e| e.to_string())) {
-            Ok(e) => e,
+        let enabled = match self.grants.view() {
+            Ok(v) => v.enabled_contributions(&self.app),
             Err(e) => {
                 log::warn!("plugins: {e}");
                 return;
             }
         };
+        st.problems = enabled.problems;
         let store_state = craft_ext_store::Store::at(&self.root).state().ok();
         let provided = provided();
-        for (id, version, dir, manifest, on) in enabled {
+        for (id, version, dir, manifest, on) in enabled.releases {
             if lock(&self.suppressed).contains(&id) {
                 continue;
             }
@@ -489,10 +455,15 @@ impl Runtime {
                 }
                 if let Err(e) = self.load_contribution(&mut st, &loaded, &dir, c) {
                     log::warn!("plugin {id}: {}: {e}", c.label);
-                    effectcraft_engine::ext::notify(s, format!("{}: {} could not load: {e}", manifest.name, c.label), true);
+                    st.problems.push((id.clone(), format!("{}: {e}", c.label)));
                 }
             }
             st.loaded.push(loaded);
+        }
+        let running: Vec<ExtensionId> = st.loaded.iter().map(|p| p.id.clone()).collect();
+        let unclean = craft_ext_store::Store::at(&self.root).begin_run(&self.app, &running).unwrap_or_default();
+        if !self.run_begun.swap(true, Ordering::Relaxed) {
+            st.unclean = unclean.into_iter().filter(|p| running.contains(p)).collect();
         }
         let starts: Vec<_> = st
             .sessions
@@ -545,19 +516,6 @@ impl Runtime {
         }
         s.layer_cache.clear();
         self.cancel_unloaded_jobs();
-        if self.run_begun.load(Ordering::Relaxed) {
-            self.record_run();
-        }
-    }
-
-    fn running(&self) -> Vec<ExtensionId> {
-        lock(&self.state).loaded.iter().map(|p| p.id.clone()).collect()
-    }
-
-    fn record_run(&self) -> Vec<ExtensionId> {
-        let running = self.running();
-        let previous = craft_ext_store::Store::at(&self.root).begin_run(&self.app, &running).unwrap_or_default();
-        previous.into_iter().filter(|p| running.contains(p)).collect()
     }
 
     pub fn end_run(&self) {
@@ -575,48 +533,44 @@ impl Runtime {
         }
     }
 
-    pub fn job_events(&self) -> Vec<(String, Invocation, Value)> {
-        let finished = self.jobs.take_finished();
-        let st = lock(&self.state);
-        finished
-            .into_iter()
-            .filter_map(|job: JobInfo| {
-                let c = st.sessions.iter().find(|c| c.plugin == job.plugin && c.contribution == job.contribution)?;
-                let inv = self.invocation(&c.plugin, c.version, &c.contribution, &format!("{} · {}", job.label, c.plugin_name), c.declared.clone());
-                Some((c.worker.clone(), inv, job.event()))
-            })
-            .collect()
-    }
-
-    pub fn turned_off(&self) -> Vec<TurnedOff> {
-        let store = craft_ext_store::Store::at(&self.root);
-        let Ok(state) = store.state() else { return vec![] };
-        let loaded: Vec<(ExtensionId, String)> = lock(&self.state).loaded.iter().map(|p| (p.id.clone(), p.name.clone())).collect();
-        state
-            .apps
-            .get(&self.app)
-            .into_iter()
-            .flatten()
-            .filter_map(|(id, setup)| {
-                let q = setup.quarantine.as_ref().filter(|q| setup.active == Some(q.version))?;
-                let name = loaded
-                    .iter()
-                    .find(|(p, _)| p == id)
-                    .map(|(_, n)| n.clone())
-                    .or_else(|| store.manifest(&state, id, q.version).ok().map(|m| m.name))
-                    .unwrap_or_else(|| id.to_string());
-                Some(TurnedOff { plugin: id.to_string(), name, reason: q.reason.clone() })
-            })
-            .collect()
-    }
-
-    fn clear_quarantine(&self, plugin: &ExtensionId) -> Result<bool, String> {
-        if !self.turned_off().iter().any(|t| t.plugin == plugin.as_str()) {
-            return Ok(false);
+    fn document_id(&self, s: &Session) -> String {
+        let token = s.plugin_document_token();
+        let mut current = lock(&self.document);
+        if let Some((open, id)) = current.as_ref()
+            && Arc::ptr_eq(open, &token)
+        {
+            return id.clone();
         }
-        craft_ext_store::Store::at(&self.root).clear_quarantine(&self.app, plugin).map_err(|e| e.to_string())?;
-        self.grants.reload();
-        Ok(true)
+        if let Some((_, closed)) = current.take() {
+            self.jobs.cancel_document(&closed);
+        }
+        let id = format!("document-{}", self.documents.fetch_add(1, Ordering::Relaxed) + 1);
+        *current = Some((token, id.clone()));
+        id
+    }
+
+    fn deliver_jobs(&self, s: &mut Session) {
+        let document = self.document_id(s);
+        let sessions: Vec<SessionContribution> = {
+            let st = lock(&self.state);
+            if st.gesture.is_some() {
+                return;
+            }
+            st.sessions.clone()
+        };
+        let owner = |job: &JobInfo| sessions.iter().find(|c| c.plugin == job.plugin && c.contribution == job.contribution);
+        self.jobs.deliver(
+            |job| job.document.as_deref() == Some(document.as_str()) && owner(job).is_some(),
+            |job| {
+                let Some(c) = owner(job) else { return false };
+                let inv = self.invocation(&c.plugin, c.version, &c.contribution, &format!("{} · {}", job.label, c.plugin_name), c.declared.clone());
+                self.deliver(s, &c.worker, inv, job.event(), false).is_ok()
+            },
+        );
+    }
+
+    pub fn load_problems(&self) -> Vec<(ExtensionId, String)> {
+        lock(&self.state).problems.clone()
     }
 
     pub fn plugin_names(&self) -> Vec<(ExtensionId, String)> {
@@ -660,14 +614,14 @@ impl Runtime {
                 let launch = Launch::plan(&p.manifest, c, dir, &work)?;
                 let worker = match &launch {
                     Launch::Wasm(_) => format!("{}@{}#{}", p.id, p.version, c.module.as_deref().unwrap_or_default()),
-                    Launch::Native { .. } => format!("{}@{}#native", p.id, p.version),
+                    Launch::Native(_) => format!("{}@{}#native", p.id, p.version),
                 };
                 if !st.workers.contains_key(&worker) {
                     let program = match launch {
                         Launch::Wasm(_) => Program::Wasm(self.module(p, dir, c)?),
-                        Launch::Native { exe, confinement } => {
-                            std::fs::create_dir_all(&work).map_err(|e| e.to_string())?;
-                            Program::Native { exe, work, confinement }
+                        Launch::Native(helper) => {
+                            std::fs::create_dir_all(&helper.work).map_err(|e| e.to_string())?;
+                            Program::Native(helper)
                         }
                     };
                     let w = self.spawn(&worker, (p.id.clone(), p.version), program)?;
@@ -767,10 +721,7 @@ impl Runtime {
     }
 
     fn spawn(&self, key: &str, (plugin, version): (ExtensionId, Version), code: Program) -> Result<Worker, String> {
-        let saved = code.clone();
         let owner = Owner { plugin, version, store: self.root.clone(), app: self.app.clone(), jobs: self.jobs.clone() };
-        let paused = Arc::new(AtomicBool::new(false));
-        let worker_paused = paused.clone();
         let (tx, rx) = mpsc::sync_channel::<Job>(QUEUE);
         let context = Arc::new(Mutex::new(None));
         let api: Arc<dyn AppApi> = Arc::new(Bridge { tx: self.tx.clone(), context: context.clone() });
@@ -779,9 +730,9 @@ impl Runtime {
         let name = key.to_string();
         std::thread::Builder::new()
             .name(format!("plugin {key}"))
-            .spawn(move || worker_main(&name, &owner, code, rx, api, grants, log, context, worker_paused))
+            .spawn(move || worker_main(&name, &owner, &code, &rx, &api, &grants, &log, &context))
             .map_err(|e| e.to_string())?;
-        Ok(Worker { tx, program: saved, paused })
+        Ok(Worker { tx })
     }
 
     fn invocation(&self, plugin: &ExtensionId, version: Version, contribution: &str, label: &str, declared: Arc<[Permission]>) -> Invocation {
@@ -794,6 +745,7 @@ impl Runtime {
             cancel: Arc::new(AtomicBool::new(false)),
             deadline: Some(Instant::now() + EVENT_TIMEOUT),
             label: label.to_string(),
+            document: lock(&self.document).as_ref().map(|(_, id)| id.clone()),
             declared,
         }
     }
@@ -1096,36 +1048,51 @@ fn read_capped(path: &Path) -> Result<Vec<u8>, String> {
     Ok(b)
 }
 
+enum Runner {
+    Wasm(Box<WasmSession>),
+    Native(Helper),
+}
+
+impl Runner {
+    fn dispatch(&mut self, inv: Invocation, event: &Value) -> Result<(), PluginError> {
+        match self {
+            Runner::Wasm(s) => s.dispatch(inv, event),
+            Runner::Native(h) => h.dispatch(inv, event),
+        }
+    }
+}
+
+fn quarantine_after_faults(strikes: &mut Strikes, owner: &Owner, outcome: Result<(), &PluginError>) -> bool {
+    let Some(reason) = strikes.record(outcome) else { return false };
+    if let Err(why) = craft_ext_store::Store::at(&owner.store).quarantine(&owner.app, &owner.plugin, owner.version, &reason) {
+        log::warn!("plugin {}: could not be turned off after repeated failures: {why}", owner.plugin);
+    }
+    true
+}
+
 #[allow(clippy::too_many_arguments)]
 fn worker_main(
     name: &str,
     owner: &Owner,
-    program: Program,
-    rx: Receiver<Job>,
-    api: Arc<dyn AppApi>,
-    grants: Arc<dyn Grants>,
-    log: LogFn,
-    context: Arc<Mutex<Option<Dispatch>>>,
-    paused: Arc<AtomicBool>,
+    program: &Program,
+    rx: &Receiver<Job>,
+    api: &Arc<dyn AppApi>,
+    grants: &Arc<dyn Grants>,
+    log: &LogFn,
+    context: &Mutex<Option<Dispatch>>,
 ) {
-    enum Runner {
-        Wasm(Box<WasmSession>),
-        Native(Helper),
-    }
-    let started = match program {
-        Program::Wasm(p) => WasmSession::new(&p, api, grants, log).map(|mut s| {
+    let start = || match program {
+        Program::Wasm(p) => WasmSession::new(p, api.clone(), grants.clone(), log.clone()).map(|mut s| {
             s.set_jobs(owner.jobs.clone());
             Runner::Wasm(Box::new(s))
         }),
-        Program::Native { exe, work, confinement } => {
-            Helper::start(&owner.plugin, owner.version, &HelperLaunch { exe, work, confinement }, api, grants, log).map(|mut h| {
-                h.set_jobs(owner.jobs.clone());
-                Runner::Native(h)
-            })
-        }
+        Program::Native(launch) => Helper::start(&owner.plugin, owner.version, launch, api.clone(), grants.clone(), log.clone()).map(|mut h| {
+            h.set_jobs(owner.jobs.clone());
+            Runner::Native(h)
+        }),
     };
-    let mut runner = match started {
-        Ok(r) => r,
+    let mut runner = match start() {
+        Ok(r) => Some(r),
         Err(e) => {
             log::warn!("plugin {name}: {e}");
             while let Ok(job) = rx.recv() {
@@ -1141,54 +1108,58 @@ fn worker_main(
             return;
         }
     };
+    let mut strikes = Strikes::default();
     loop {
-        if let Runner::Native(h) = &mut runner
+        if let Some(Runner::Native(h)) = &mut runner
             && !h.supervise()
         {
-            break;
+            runner = None;
+            if grants.stopped(&owner.plugin, owner.version) || !grants.full_access(&owner.plugin) {
+                break;
+            }
+            if quarantine_after_faults(&mut strikes, owner, Err(&PluginError::Trap("the helper stopped".into()))) {
+                break;
+            }
         }
         let job = match rx.recv_timeout(Duration::from_millis(250)) {
             Ok(job) => job,
             Err(RecvTimeoutError::Timeout) => continue,
             Err(RecvTimeoutError::Disconnected) => break,
         };
-        match job {
-            Job::Event(job) => {
-                let EventJob { dispatch, inv, event, done } = *job;
-                *lock(&context) = Some(dispatch);
-                FINISH_ERROR.with(|f| f.borrow_mut().take());
-                let r = match &mut runner {
-                    Runner::Wasm(s) => s.dispatch(inv, &event),
-                    Runner::Native(h) => h.dispatch(inv, &event),
-                };
-                if let (Runner::Wasm(s), Err(e)) = (&runner, &r)
-                    && s.paused
-                    && !paused.swap(true, Ordering::Relaxed)
-                {
-                    let reason = format!("{PAUSE_REASON}: {e}");
-                    if let Err(why) = craft_ext_store::Store::at(&owner.store).quarantine(&owner.app, &owner.plugin, owner.version, &reason) {
-                        log::warn!("plugin {name}: the pause could not be remembered across restarts: {why}");
-                    }
-                }
-                match &r {
-                    Err(e @ (craft_ext_host::wasm::PluginError::Cancelled | craft_ext_host::wasm::PluginError::Failed(-5, _))) => {
-                        log::debug!("plugin {name}: {e}")
-                    }
-                    Err(e) => log::warn!("plugin {name}: {e}"),
-                    Ok(_) => {}
-                }
-                let r = event_result(r, FINISH_ERROR.with(|f| f.borrow_mut().take()));
-                if let Err(e) = &r {
-                    log::debug!("plugin {name}: {e}");
-                }
-                if let Some(d) = done {
-                    let _ = d.send(r);
-                }
-            }
+        let EventJob { dispatch, inv, event, done } = match job {
+            Job::Event(job) => *job,
             Job::Stop => break,
+        };
+        let running = match runner.take().map_or_else(&start, Ok) {
+            Ok(r) => runner.insert(r),
+            Err(e) => {
+                if let Some(d) = done {
+                    let _ = d.send(Err(e.to_string()));
+                }
+                continue;
+            }
+        };
+        *lock(context) = Some(dispatch);
+        FINISH_ERROR.with(|f| f.borrow_mut().take());
+        let r = running.dispatch(inv, &event);
+        if matches!(running, Runner::Native(_)) && matches!(r, Err(PluginError::Stopped(_) | PluginError::TooSlow | PluginError::Trap(_))) {
+            runner = None;
+        }
+        match &r {
+            Err(e @ (PluginError::Cancelled | PluginError::Failed(-5, _))) => log::debug!("plugin {name}: {e}"),
+            Err(e) => log::warn!("plugin {name}: {e}"),
+            Ok(_) => {}
+        }
+        let turned_off = quarantine_after_faults(&mut strikes, owner, r.as_ref().map(|_| ()));
+        let r = event_result(r, FINISH_ERROR.with(|f| f.borrow_mut().take()));
+        if let Some(d) = done {
+            let _ = d.send(r);
+        }
+        if turned_off {
+            break;
         }
     }
-    if let Runner::Native(h) = &mut runner {
+    if let Some(Runner::Native(h)) = &mut runner {
         h.kill();
     }
 }
@@ -1411,10 +1382,6 @@ impl PluginRuntime for Runtime {
 
     fn pump(&self, s: &mut Session) {
         self.interactive.store(true, Ordering::Relaxed);
-        if !self.run_begun.swap(true, Ordering::Relaxed) {
-            let unclean = self.record_run();
-            lock(&self.state).unclean = unclean;
-        }
         self.sync_document(s);
         let changes = self.grants.changes();
         let stale = lock(&self.state).store_changes != changes;
@@ -1430,12 +1397,7 @@ impl PluginRuntime for Runtime {
         for e in failures.into_iter().take(4) {
             effectcraft_engine::ext::notify(s, format!("Plugin: {e}"), true);
         }
-        for (worker, inv, event) in self.job_events() {
-            let label = inv.label.clone();
-            if let Err(e) = self.deliver(s, &worker, inv, event, false) {
-                effectcraft_engine::ext::notify(s, format!("{label} finished, but its plugin could not receive the result: {e}"), true);
-            }
-        }
+        self.deliver_jobs(s);
         let stale_gesture = {
             let st = lock(&self.state);
             st.gesture.as_ref().zip(st.selected_tool.as_ref()).is_some_and(|(g, c)| {
@@ -1453,47 +1415,12 @@ impl PluginRuntime for Runtime {
         }
     }
 
-    fn paused(&self) -> Vec<String> {
-        let mut ids: BTreeSet<String> = {
-            let st = lock(&self.state);
-            st.sessions.iter().filter(|c| st.workers.get(&c.worker).is_some_and(|w| w.paused.load(Ordering::Relaxed))).map(|c| c.plugin.to_string()).collect()
-        };
-        ids.extend(self.turned_off().into_iter().map(|t| t.plugin));
-        ids.into_iter().collect()
-    }
     fn selected_tool(&self) -> Option<String> {
         lock(&self.state).selected_tool.as_ref().map(|c| format!("plugin.{}.{}", c.plugin, c.contribution))
     }
 
     fn overlays(&self) -> Vec<Value> {
         lock(&self.state).overlays.values().cloned().collect()
-    }
-
-    fn resume(&self, s: &mut Session, id: &str) -> Result<(), String> {
-        let plugin = ExtensionId::new(id).map_err(|e| e.to_string())?;
-        let cleared = self.clear_quarantine(&plugin)?;
-        let workers: Vec<_> = {
-            let st = lock(&self.state);
-            let keys: BTreeMap<_, _> = st.sessions.iter().filter(|c| c.plugin == plugin).map(|c| (c.worker.clone(), c.version)).collect();
-            keys.into_iter().filter_map(|(key, version)| st.workers.get(&key).map(|w| (key, version, w.program.clone()))).collect()
-        };
-        if workers.is_empty() {
-            return if cleared { Ok(()) } else { Err("plugin is not loaded".into()) };
-        }
-        self.cancel_gesture(s);
-        for (key, version, program) in workers {
-            let worker = self.spawn(&key, (plugin.clone(), version), program)?;
-            if let Some(old) = lock(&self.state).workers.insert(key, worker) {
-                let _ = old.tx.try_send(Job::Stop);
-            }
-        }
-        let contributions: Vec<_> = lock(&self.state).sessions.iter().filter(|c| c.plugin == plugin).cloned().collect();
-        let wait = !self.interactive.load(Ordering::Relaxed);
-        for c in contributions {
-            let inv = self.invocation(&c.plugin, c.version, &c.contribution, &c.label, c.declared.clone());
-            self.deliver(s, &c.worker, inv, json!({"event":"init"}), wait)?;
-        }
-        Ok(())
     }
 
     fn tool_event(&self, s: &mut Session, phase: &str, at: [f64; 2], modifiers: Value) {
@@ -1853,7 +1780,7 @@ mod regression_tests {
         (i32.const 0)))"#;
 
     #[test]
-    fn three_traps_pause_and_resume_reinstantiates() {
+    fn three_traps_in_a_row_turn_the_release_off_across_restarts() {
         let dir = tempfile::tempdir().unwrap();
         let rt = Runtime::new(dir.path().to_path_buf(), false).unwrap();
         let mut s = Session::default();
@@ -1922,102 +1849,64 @@ label = "Trap"
         let command = "plugin.io.github.tests.trap.main";
         for _ in 0..3 {
             let e = rt.run_command(&mut s, command, &json!({})).unwrap_err().to_string();
-            assert!(!e.contains("paused"), "{e}");
+            assert!(e.contains("the plugin crashed"), "{e}");
         }
-        assert_eq!(rt.paused(), vec![id.to_string()]);
         let quarantined = craft_ext_store::Store::at(dir.path()).state().unwrap().apps[&rt.app][&id].quarantine.clone().unwrap();
         assert_eq!(quarantined.version, version);
-        assert!(quarantined.reason.starts_with("paused after 3 failures in a row: the plugin crashed"), "{}", quarantined.reason);
-        assert_eq!(rt.turned_off().into_iter().map(|t| (t.plugin, t.name)).collect::<Vec<_>>(), vec![(id.to_string(), "Trap".to_string())]);
-        assert!(rt.run_command(&mut s, command, &json!({})).unwrap_err().to_string().contains("paused"));
-        rt.resume(&mut s, id.as_str()).unwrap();
-        assert!(craft_ext_store::Store::at(dir.path()).state().unwrap().apps[&rt.app][&id].quarantine.is_none());
-        assert!(rt.paused().is_empty());
-        let e = rt.run_command(&mut s, command, &json!({})).unwrap_err().to_string();
-        assert!(!e.contains("paused"), "{e}");
-        assert!(rt.paused().is_empty());
+        assert!(quarantined.reason.starts_with("stopped after 3 failures in a row: the plugin crashed"), "{}", quarantined.reason);
+        assert!(rt.run_command(&mut s, command, &json!({})).unwrap_err().to_string().contains("the plugin stopped"));
+        assert!(GrantView::open(dir.path(), rt.app.clone()).unwrap().enabled_contributions(&rt.app).releases.is_empty(), "the next start does not load it");
     }
 
     #[test]
-    fn a_finished_job_reaches_its_contribution_as_one_event() {
+    fn a_finished_job_reaches_its_contribution_only_while_its_document_is_open() {
         let dir = tempfile::tempdir().unwrap();
         let rt = Runtime::new(dir.path().to_path_buf(), false).unwrap();
+        let mut s = Session::default();
         let id = ExtensionId::new("io.github.tests.jobs").unwrap();
-        lock(&rt.state).sessions.push(SessionContribution {
-            plugin: id.clone(),
-            version: Version::parse("1.0.0").unwrap(),
-            plugin_name: "Jobs".into(),
-            contribution: "main".into(),
-            label: "Analyse".into(),
-            kind: ContributionKind::Command,
-            category: None,
-            worker: "jobs-worker".into(),
-            declared: Arc::from([]),
-            ui_level: craft_ext_core::ui::tree::UI_LEVEL,
-        });
-        let ticket = rt.jobs.admit(&id, "main", "Analyse clip", true).unwrap();
-        let orphan = rt.jobs.admit(&ExtensionId::new("io.github.tests.gone").unwrap(), "main", "Orphan", true).unwrap();
-        ticket.finish(craft_ext_host::jobs::JobState::Failed("no frames".into()));
-        orphan.finish(craft_ext_host::jobs::JobState::Cancelled);
-        let events = rt.job_events();
-        assert_eq!(events.len(), 1, "a job whose plugin is not loaded is not delivered");
-        let (worker, inv, event) = &events[0];
-        assert_eq!(worker, "jobs-worker");
-        assert_eq!((inv.contribution.as_str(), inv.label.as_str()), ("main", "Analyse clip · Jobs"));
-        assert_eq!(event, &json!({"event":"job","job":1,"ok":false,"error":"no frames"}));
-        assert!(rt.job_events().is_empty(), "each job is delivered once");
+        let version = Version::parse("1.0.0").unwrap();
+        let plugin = Plugin::load(id.as_str(), &wat::parse_str(TRAP_ON_COMMAND).unwrap()).unwrap();
+        let worker = rt.spawn("jobs-worker", (id.clone(), version), Program::Wasm(plugin)).unwrap();
+        {
+            let mut st = lock(&rt.state);
+            st.workers.insert("jobs-worker".into(), worker);
+            st.sessions.push(SessionContribution {
+                plugin: id.clone(),
+                version,
+                plugin_name: "Jobs".into(),
+                contribution: "main".into(),
+                label: "Analyse".into(),
+                kind: ContributionKind::Command,
+                category: None,
+                worker: "jobs-worker".into(),
+                declared: Arc::from([]),
+                ui_level: craft_ext_core::ui::tree::UI_LEVEL,
+            });
+        }
+        let here = rt.document_id(&s);
+        assert_eq!(rt.invocation(&id, version, "main", "Analyse", Arc::from([])).document.as_deref(), Some(here.as_str()));
+        let mine = rt.jobs.admit(&id, "main", "Analyse clip", true, Some(&here)).unwrap();
+        let other = rt.jobs.admit(&id, "main", "Other", true, Some("document-0")).unwrap();
+        let orphan = rt.jobs.admit(&ExtensionId::new("io.github.tests.gone").unwrap(), "main", "Orphan", true, Some(&here)).unwrap();
+        for t in [&mine, &other, &orphan] {
+            t.finish(craft_ext_host::jobs::JobState::Failed("no frames".into()));
+        }
+        rt.deliver_jobs(&mut s);
+        let delivered = |rt: &Runtime| rt.jobs.list().into_iter().map(|j| (j.label, j.delivered)).collect::<Vec<_>>();
+        assert_eq!(delivered(&rt), vec![("Orphan".into(), false), ("Other".into(), false), ("Analyse clip".into(), true)]);
+        let running = rt.jobs.admit(&id, "main", "Render", true, Some(&here)).unwrap();
+        let next = Session::default();
+        assert_ne!(rt.document_id(&next), here);
+        assert!(running.cancel.load(Ordering::Relaxed), "closing a document stops its jobs");
     }
 
     #[test]
     fn jobs_of_plugins_that_are_no_longer_loaded_are_cancelled() {
         let dir = tempfile::tempdir().unwrap();
         let rt = Runtime::new(dir.path().to_path_buf(), false).unwrap();
-        let ticket = rt.jobs.admit(&ExtensionId::new("io.github.tests.gone").unwrap(), "main", "Render", true).unwrap();
+        let ticket = rt.jobs.admit(&ExtensionId::new("io.github.tests.gone").unwrap(), "main", "Render", true, None).unwrap();
         rt.cancel_unloaded_jobs();
         assert!(ticket.cancel.load(Ordering::Relaxed));
-    }
-
-    #[test]
-    fn hybrid_packages_run_modules_sandboxed_and_restricted_helpers_confined() {
-        let platform = platform();
-        let manifest = Manifest::parse(
-            format!(
-                r#"schema = 2
-id = "io.github.tests.hybrid"
-name = "Hybrid"
-version = "1.0.0"
-license = "MIT"
-source = "https://example.com/tests"
-summary = "Tests"
-apps = ["effectcraft"]
-[native]
-mode = "restricted"
-executables = {{ "{platform}" = "bin/helper" }}
-[[contribution]]
-id = "sandboxed"
-kind = "command"
-contract = "effectcraft.session@1.0"
-label = "Sandboxed"
-module = "main.wasm"
-[[contribution]]
-id = "helper"
-kind = "command"
-contract = "effectcraft.session@1.0"
-label = "Helper"
-"#
-            )
-            .as_bytes(),
-        )
-        .unwrap();
-        let plan = |id: &str| Launch::plan(&manifest, manifest.contribution(id).unwrap(), Path::new("/rel"), Path::new("/data")).unwrap();
-        assert_eq!(plan("sandboxed"), Launch::Wasm(PathBuf::from("/rel/main.wasm")));
-        assert_eq!(
-            plan("helper"),
-            Launch::Native {
-                exe: PathBuf::from("/rel/bin/helper"),
-                confinement: Confinement::Restricted { release: PathBuf::from("/rel"), data: PathBuf::from("/data") }
-            }
-        );
     }
 
     #[test]

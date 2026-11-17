@@ -164,9 +164,11 @@ modifiers. Escape cancels. The gesture captures composition/selection and grant
 generation, folds edits into one undo entry, and rolls back on failure or
 revocation. Middle-button and Space pan and wheel navigation retain the viewer's
 host implementation. `plugin.toolEvent` drives the same runtime from the CLI.
-Paused wasm workers appear with Resume in Settings ▸ Plugins.
-`plugin.resume {id}` restarts that package's session workers and sends init.
-`effectcraft-cli plugin resume <id>` explains that pauses are session-local.
+Three faults in a row (a trap, too slow, too much memory or a stopped native
+helper) turn the release off with `Store::quarantine`; errors the plugin returns,
+rollbacks and document changes never count. It stays off across restarts and shows
+as Quarantined in Settings ▸ Plugins ▸ Problems with Turn back on;
+`effectcraft-cli plugin resume <id>` does the same from the CLI.
 
 The generated contract lists the new operations and permission rules. Document
 grants never authorize arbitrary file access: property/effect writes accept only

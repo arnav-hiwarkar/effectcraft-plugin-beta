@@ -4,7 +4,6 @@ use std::sync::Arc;
 use craft_ext_ui::craft_ext_manager::{Action, Config, Tab, Word};
 use craft_ext_ui::plugin_ui::{Host, PluginUi};
 use craft_ext_ui::{PluginManager, ProjectPrompt};
-use effectcraft_plugins::runtime::{JobInfo, JobState};
 use serde_json::{Value, json};
 
 use crate::EffectcraftApp;
@@ -28,7 +27,7 @@ thread_local! {
 
 fn config() -> Result<Config, String> {
     let app = craft_ext_core::id::AppId::new(effectcraft_plugins::contract::APP).map_err(|e| e.to_string())?;
-    Ok(Config::app(effectcraft_plugins::store_root()?, app, effectcraft_plugins::contract::provided(), effectcraft_plugins::runtime::platform()))
+    Ok(Config::app(effectcraft_plugins::store_root()?, app, effectcraft_plugins::contract::provided(), craft_ext_ui::craft_ext_host::native::platform()))
 }
 
 fn manager_view(config: Config) -> PluginManager {
@@ -112,7 +111,9 @@ pub fn show(app: &mut EffectcraftApp, ctx: &egui::Context) {
         }
     });
     if let Some(rt) = effectcraft_plugins::runtime() {
-        jobs_window(&rt, ctx);
+        let names = rt.plugin_names();
+        let name = |id: &craft_ext_core::id::ExtensionId| names.iter().find(|(p, _)| p == id).map_or_else(|| id.to_string(), |(_, n)| n.clone());
+        craft_ext_ui::jobs::jobs_window(ctx, &rt.jobs, &name, &|english| crate::i18n::tr(english).to_string());
     }
     let Some(rt) = app.session.plugins.clone() else { return };
     let mut events: Vec<(String, u64, String, Value)> = Vec::new();
@@ -138,60 +139,6 @@ pub fn show(app: &mut EffectcraftApp, ctx: &egui::Context) {
     for (key, rev, widget, value) in events {
         let _ = app.session.execute("plugin.uiEvent", json!({"surface": key, "rev": rev, "widget": widget, "value": value}));
     }
-}
-
-fn job_status(job: &JobInfo) -> String {
-    match &job.state {
-        JobState::Running if job.note.is_empty() => crate::i18n::tr("Working…").to_string(),
-        JobState::Running => job.note.clone(),
-        JobState::Done(_) => crate::i18n::tr("Done").to_string(),
-        JobState::Failed(why) => format!("{}: {why}", crate::i18n::tr("Failed")),
-        JobState::Cancelled => crate::i18n::tr("Cancelled").to_string(),
-    }
-}
-
-fn jobs_window(rt: &effectcraft_plugins::runtime::Runtime, ctx: &egui::Context) {
-    let jobs = rt.jobs.list();
-    if jobs.is_empty() {
-        return;
-    }
-    if jobs.iter().any(|j| !j.state.finished()) {
-        ctx.request_repaint_after(std::time::Duration::from_millis(100));
-    }
-    let names = rt.plugin_names();
-    egui::Window::new(crate::i18n::tr("Plugin jobs"))
-        .id(egui::Id::unique("plugin-jobs"))
-        .anchor(egui::Align2::RIGHT_BOTTOM, egui::vec2(-12.0, -36.0))
-        .default_open(true)
-        .resizable(false)
-        .show(ctx, |ui| {
-            for job in &jobs {
-                let plugin = names.iter().find(|(id, _)| id == &job.plugin).map_or_else(|| job.plugin.to_string(), |(_, n)| n.clone());
-                ui.horizontal(|ui| {
-                    ui.strong(&job.label);
-                    ui.weak(plugin);
-                });
-                ui.horizontal(|ui| {
-                    if !job.state.finished() {
-                        match job.progress {
-                            Some(p) => {
-                                ui.add(egui::ProgressBar::new(p).desired_width(140.0).show_percentage());
-                            }
-                            None => {
-                                ui.spinner();
-                            }
-                        }
-                    }
-                    ui.label(job_status(job));
-                    if !job.state.finished() && job.cancellable && ui.small_button(crate::i18n::tr("Cancel")).clicked() {
-                        rt.jobs.cancel(job.id, false);
-                    }
-                });
-            }
-            if jobs.iter().any(|j| j.state.finished()) && ui.button(crate::i18n::tr("Clear finished")).clicked() {
-                rt.jobs.clear_finished();
-            }
-        });
 }
 
 pub fn manager_page(app: &mut EffectcraftApp, ui: &mut egui::Ui) {
@@ -223,39 +170,16 @@ pub fn manager_page(app: &mut EffectcraftApp, ui: &mut egui::Ui) {
         if open_problems {
             view.model_mut().apply(Action::SetTab(Tab::Problems));
         }
-        view.show_with_app_problems(ui, &words, |ui| paused_problems(app, ui));
+        if let (Some(rt), Some(app_id)) = (effectcraft_plugins::runtime(), view.model().config().scope().cloned()) {
+            view.model_mut().set_load_problems(app_id, rt.load_problems());
+        }
+        view.show(ui, &words);
         if view.take_install_file_request()
             && let Some(path) = app.hooks.pick_files.as_ref().and_then(|pick| pick(&["craftplugin"]).into_iter().next())
         {
             view.install_file(path.into());
         }
     });
-}
-
-fn paused_problems(app: &mut EffectcraftApp, ui: &mut egui::Ui) -> bool {
-    let Some(rt) = app.session.plugins.clone() else { return false };
-    let paused = rt.paused();
-    let turned_off = effectcraft_plugins::runtime().map(|r| r.turned_off()).unwrap_or_default();
-    for id in &paused {
-        let reason = turned_off
-            .iter()
-            .find(|t| &t.plugin == id)
-            .map_or_else(|| crate::i18n::tr("paused after repeated failures").to_string(), |t| format!("{}: {}", t.name, t.reason));
-        ui.group(|ui| {
-            ui.set_width(ui.available_width());
-            ui.horizontal(|ui| {
-                ui.label(format!("{id}: {reason}"));
-                let r = ui.button(crate::i18n::tr("Resume"));
-                app.auto.add(&format!("plugin.resume.{id}"), r.rect, "Resume");
-                if r.clicked()
-                    && let Err(e) = rt.resume(&mut app.session, id)
-                {
-                    app.ui.status = e;
-                }
-            });
-        });
-    }
-    !paused.is_empty()
 }
 
 struct AppHost<'a>(&'a mut EffectcraftApp);

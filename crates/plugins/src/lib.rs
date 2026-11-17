@@ -83,7 +83,7 @@ mod native {
     /// A manager for this app over the shared store (works in safe mode and without [`start`]).
     pub fn manager() -> Result<Manager, String> {
         let app = craft_ext_core::id::AppId::new(crate::contract::APP).map_err(|e| e.to_string())?;
-        Ok(Manager::new(craft_ext_store::Store::at(store_root()?), Some(app), crate::contract::provided(), crate::runtime::platform()))
+        Ok(Manager::new(craft_ext_store::Store::at(store_root()?), Some(app), crate::contract::provided(), craft_ext_host::native::platform()))
     }
 
     /// One lifetime scheduler; successful refreshes repeat after six hours, failures retry
@@ -123,17 +123,6 @@ mod native {
     /// `effectcraft-cli plugin …`. `plugin contract` prints the contract reference; everything else
     /// goes to the shared `plugin` command library. Returns the exit code.
     pub fn run_cli(args: &[String], out: &mut dyn std::io::Write, err: &mut dyn std::io::Write) -> i32 {
-        if args.first().is_some_and(|a| a == "resume") {
-            let Some(id) = args.get(1) else {
-                let _ = writeln!(err, "usage: plugin resume <id>");
-                return 2;
-            };
-            let _ = writeln!(
-                out,
-                "{id}: pauses last only for the current session. New CLI sessions start unpaused. In a running session execute plugin.resume with {{\"id\":\"{id}\"}}; desktop: Plugins > Resume."
-            );
-            return 0;
-        }
         if args.first().is_some_and(|a| a == "contract") {
             return match write!(out, "{}", crate::contract::contract().to_markdown()) {
                 Ok(()) => 0,
