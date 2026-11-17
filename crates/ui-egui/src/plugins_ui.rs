@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::sync::Arc;
 
-use craft_ext_ui::craft_ext_manager::{Config, Word};
+use craft_ext_ui::craft_ext_manager::{Action, Config, Tab, Word};
 use craft_ext_ui::plugin_ui::{Host, PluginUi};
 use craft_ext_ui::{PluginManager, ProjectPrompt};
 use effectcraft_plugins::runtime::{JobInfo, JobState};
@@ -18,7 +18,8 @@ struct State {
     refreshed: bool,
     renderer: PluginUi,
     last_tool: Option<crate::state::Tool>,
-    prompt_plugins: Vec<craft_ext_core::id::ExtensionId>,
+    unclean_shown: bool,
+    open_problems: bool,
 }
 
 thread_local! {
@@ -28,6 +29,14 @@ thread_local! {
 fn config() -> Result<Config, String> {
     let app = craft_ext_core::id::AppId::new(effectcraft_plugins::contract::APP).map_err(|e| e.to_string())?;
     Ok(Config::app(effectcraft_plugins::store_root()?, app, effectcraft_plugins::contract::provided(), effectcraft_plugins::runtime::platform()))
+}
+
+fn manager_view(config: Config) -> PluginManager {
+    let mut view = PluginManager::new(config.clone()).with_install_file();
+    if let (Some(rt), Some(app)) = (effectcraft_plugins::runtime(), config.scope()) {
+        view.model_mut().set_unclean_exit(app.clone(), rt.unclean_exit());
+    }
+    view
 }
 
 fn words(word: Word) -> String {
@@ -62,20 +71,28 @@ pub fn frame(app: &mut EffectcraftApp, ctx: &egui::Context) {
         }
         if st.prompt_document.as_ref().is_some_and(|d| !Arc::ptr_eq(d, &app.session.plugin_document_token())) {
             st.prompt = None;
-            st.prompt_plugins.clear();
             st.prompt_document = None;
         }
         if let Some(statuses) = rt.take_project_prompt(&app.session) {
             match config() {
                 Ok(config) => {
                     st.prompt_document = Some(app.session.plugin_document_token());
-                    st.prompt_plugins = statuses.iter().map(|(r, _)| r.id.clone()).collect();
                     st.prompt = Some(ProjectPrompt::new(config, statuses));
                 }
                 Err(e) => log::warn!("plugins: {e}"),
             }
         }
     });
+    let crashed = STATE.with(|st| !st.borrow().unclean_shown) && !rt.unclean_exit().is_empty();
+    if crashed {
+        STATE.with(|st| {
+            let mut st = st.borrow_mut();
+            st.unclean_shown = true;
+            st.open_problems = true;
+            st.view = None;
+        });
+        crate::panels::settings::open(app, "plugins");
+    }
     if !app.session.plugins.as_ref().is_none_or(|p| p.surfaces().is_empty() && p.commands().is_empty()) {
         ctx.request_repaint_after(std::time::Duration::from_millis(100));
     }
@@ -87,17 +104,14 @@ pub fn show(app: &mut EffectcraftApp, ctx: &egui::Context) {
         if let Some(p) = st.prompt.as_mut()
             && let Some(outcome) = p.show(ctx, &words)
         {
-            let ids = if outcome.open_without { st.prompt_plugins.clone() } else { outcome.skipped };
             if let Some(rt) = effectcraft_plugins::runtime() {
-                rt.suppress_for_document(&mut app.session, ids);
+                rt.suppress_for_document(&mut app.session, outcome.skipped);
             }
             st.prompt = None;
             st.prompt_document = None;
-            st.prompt_plugins.clear();
         }
     });
     if let Some(rt) = effectcraft_plugins::runtime() {
-        unclean_exit_notice(&rt, ctx);
         jobs_window(&rt, ctx);
     }
     let Some(rt) = app.session.plugins.clone() else { return };
@@ -123,34 +137,6 @@ pub fn show(app: &mut EffectcraftApp, ctx: &egui::Context) {
     }
     for (key, rev, widget, value) in events {
         let _ = app.session.execute("plugin.uiEvent", json!({"surface": key, "rev": rev, "widget": widget, "value": value}));
-    }
-}
-
-fn unclean_exit_notice(rt: &effectcraft_plugins::runtime::Runtime, ctx: &egui::Context) {
-    let names = rt.after_unclean_exit();
-    if names.is_empty() {
-        return;
-    }
-    let mut answer = None;
-    egui::Window::new(crate::i18n::tr("Plugins after an unexpected close"))
-        .id(egui::Id::unique("plugin-unclean-exit"))
-        .collapsible(false)
-        .resizable(false)
-        .show(ctx, |ui| {
-            ui.label(format!("{} {}", crate::i18n::tr("EffectCraft closed unexpectedly while these plugins were running:"), names.join(", ")));
-            ui.horizontal(|ui| {
-                if ui.button(crate::i18n::tr("Start without these plugins")).clicked() {
-                    answer = Some(true);
-                }
-                if ui.button(crate::i18n::tr("Keep them on")).clicked() {
-                    answer = Some(false);
-                }
-            });
-        });
-    if let Some(start_without) = answer
-        && let Err(e) = rt.answer_unclean_exit(start_without)
-    {
-        log::warn!("plugins: {e}");
     }
 }
 
@@ -225,15 +211,24 @@ pub fn manager_page(app: &mut EffectcraftApp, ui: &mut egui::Ui) {
         }
         if st.view.is_none() && st.manager_error.is_none() {
             match config() {
-                Ok(config) => st.view = Some(PluginManager::new(config)),
+                Ok(config) => st.view = Some(manager_view(config)),
                 Err(e) => st.manager_error = Some(e),
             }
         }
+        let open_problems = std::mem::take(&mut st.open_problems);
         let Some(view) = st.view.as_mut() else {
             ui.label(format!("{}: {}", crate::i18n::tr("Plugins are unavailable"), st.manager_error.clone().unwrap_or_default()));
             return;
         };
+        if open_problems {
+            view.model_mut().apply(Action::SetTab(Tab::Problems));
+        }
         view.show_with_app_problems(ui, &words, |ui| paused_problems(app, ui));
+        if view.take_install_file_request()
+            && let Some(path) = app.hooks.pick_files.as_ref().and_then(|pick| pick(&["craftplugin"]).into_iter().next())
+        {
+            view.install_file(path.into());
+        }
     });
 }
 

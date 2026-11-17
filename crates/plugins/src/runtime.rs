@@ -228,7 +228,6 @@ pub struct TurnedOff {
     pub name: String,
     pub reason: String,
 }
-pub const UNCLEAN_EXIT: &str = "the app closed unexpectedly while this plugin was running";
 
 struct Worker {
     paused: Arc<AtomicBool>,
@@ -624,27 +623,10 @@ impl Runtime {
         lock(&self.state).loaded.iter().map(|p| (p.id.clone(), p.name.clone())).collect()
     }
 
-    pub fn after_unclean_exit(&self) -> Vec<String> {
-        let st = lock(&self.state);
-        st.unclean.iter().map(|id| st.loaded.iter().find(|p| &p.id == id).map_or_else(|| id.to_string(), |p| p.name.clone())).collect()
-    }
-
-    pub fn answer_unclean_exit(&self, start_without: bool) -> Result<(), String> {
-        let (unclean, loaded): (Vec<ExtensionId>, Vec<(ExtensionId, Version)>) = {
-            let mut st = lock(&self.state);
-            (std::mem::take(&mut st.unclean), st.loaded.iter().map(|p| (p.id.clone(), p.version)).collect())
-        };
-        if !start_without {
-            return Ok(());
-        }
-        let store = craft_ext_store::Store::at(&self.root);
-        for plugin in unclean {
-            if let Some((_, version)) = loaded.iter().find(|(id, _)| id == &plugin) {
-                store.quarantine(&self.app, &plugin, *version, UNCLEAN_EXIT).map_err(|e| e.to_string())?;
-            }
-        }
-        self.grants.reload();
-        Ok(())
+    /// The plugins that were running when EffectCraft last quit unexpectedly, for the Plugin
+    /// Manager's Problems (empty until the first pump records this run).
+    pub fn unclean_exit(&self) -> Vec<ExtensionId> {
+        lock(&self.state).unclean.clone()
     }
 
     fn load_contribution(&self, st: &mut State, p: &Loaded, dir: &Path, c: &Contribution) -> Result<(), String> {
@@ -952,7 +934,7 @@ impl Runtime {
                 .iter()
                 .find(|c| c.plugin == begin.plugin && c.contribution == begin.inv.contribution)
                 .map_or(craft_ext_core::ui::tree::UI_LEVEL, |c| c.ui_level);
-            Scope { comp, selection, plugin_name, ui_level }
+            Scope { plugin: begin.plugin.clone(), comp, selection, plugin_name, ui_level }
         };
         let mark = s.begin_group();
         let selection: Vec<u64> = scope.selection.iter().map(|l| l.0).collect();
@@ -1244,8 +1226,14 @@ fn status_text(s: &Status) -> String {
 /// Plugins the project's effects use, with the contributions (effect ids) each one uses.
 fn used_plugins(project: &Project) -> BTreeMap<String, BTreeSet<String>> {
     let mut out: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    for owner in project.plugin_data.keys() {
+        out.entry(owner.clone()).or_default();
+    }
     for (_, c) in project.comps() {
         for l in &c.layers {
+            for owner in l.plugin_data.keys() {
+                out.entry(owner.clone()).or_default();
+            }
             for g in l.effects().into_iter().flat_map(|fx| fx.groups()) {
                 if let effectcraft_project::GroupKind::Effect { effect } = &g.kind
                     && effectcraft_engine::ext::is_plugin_effect(effect)
@@ -2174,6 +2162,32 @@ label = "Test"
     }
 
     #[test]
+    fn plugins_that_keep_data_are_referenced_and_their_references_kept_while_missing() {
+        let mut s = Session::default();
+        s.execute("comp.new", json!({"width":32,"height":32})).unwrap();
+        let id = s.execute("layer.newNull", json!({})).unwrap()["layer"].as_u64().unwrap();
+        let cid = s.active_comp_id().unwrap();
+        s.edit("seed", None, |p, _| {
+            p.plugin_data.insert("io.github.alice.doc".into(), json!({"k":1}));
+            p.comp_mut(cid).unwrap().layer_mut(effectcraft_project::LayerId(id)).unwrap().plugin_data.insert("io.github.alice.layer".into(), json!({"k":2}));
+            Ok(())
+        })
+        .unwrap();
+        let used = used_plugins(&s.project);
+        assert_eq!(used.keys().map(String::as_str).collect::<Vec<_>>(), vec!["io.github.alice.doc", "io.github.alice.layer"]);
+        assert!(used.values().all(BTreeSet::is_empty), "data needs the plugin, not one of its contributions");
+        let recorded = effectcraft_project::PluginRef {
+            id: "io.github.alice.doc".into(),
+            version: "1.2.0".into(),
+            sha256: None,
+            source: "catalogue".into(),
+            name: "Doc".into(),
+            contributions: BTreeMap::new(),
+        };
+        assert_eq!(saved_reference(Some(&recorded), None, &BTreeSet::new()), Some(recorded), "a missing plugin keeps its reference");
+    }
+
+    #[test]
     fn project_refs_include_required_contributions_and_state_versions() {
         let mut p = Project::default();
         p.plugins.push(effectcraft_project::PluginRef {
@@ -2327,5 +2341,18 @@ label = "Test"
         let error = effectcraft_engine::ext::missing_effects_error(&s.project).unwrap();
         assert!(error.contains("legacy-filter") && error.contains("ec.unknown-plugin"));
         assert_eq!(before, serde_json::to_value(&s.project).unwrap());
+        use effectcraft_engine::ext::{MissingEffects, render_project};
+        let (same, none) = render_project(&s.project, MissingEffects::Refuse);
+        assert!(Arc::ptr_eq(&same, &s.project) && none.is_empty(), "refusing renders the project itself");
+        let (copy, left_out) = render_project(&s.project, MissingEffects::RenderWithout);
+        assert_eq!(left_out, vec!["ec.unknown-plugin".to_string(), "legacy-filter".to_string()]);
+        assert!(effectcraft_engine::ext::missing_effects_error(&copy).is_none());
+        assert_eq!(copy.comp(cid).unwrap().layers[0].effects().unwrap().groups().count(), 0);
+        assert_eq!(before, serde_json::to_value(&s.project).unwrap(), "the project keeps the effects");
+        let refused = s.start_render(true, MissingEffects::Refuse).unwrap_err();
+        assert!(refused.contains("not installed"), "{refused}");
+        let chosen = s.start_render(true, MissingEffects::RenderWithout).unwrap_err();
+        assert_eq!(chosen, "export is not available in this build", "the choice passes the missing-effect refusal");
+        assert!(s.events.iter().any(|e| matches!(e, effectcraft_engine::Event::Toast { message, .. } if message == "Rendering without missing plugin effects: ec.unknown-plugin, legacy-filter")));
     }
 }

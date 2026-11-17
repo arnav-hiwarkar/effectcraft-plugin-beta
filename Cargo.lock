@@ -1394,6 +1394,7 @@ version = "0.1.0"
 dependencies = [
  "craft-ext-core",
  "craft-ext-store",
+ "png",
  "serde_json",
 ]
 

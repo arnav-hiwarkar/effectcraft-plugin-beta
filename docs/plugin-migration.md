@@ -34,7 +34,18 @@ catalogue implementation have been removed. Old packages need a schema-2
 - Save writes project plugin references; open computes statuses without installing
   or enabling and offers the project prompt / CLI diagnostics.
 - Missing effect property groups and parameters survive save. Preview passes
-  through with status; final renders refuse and identify the missing plugin.
+  through with status; final renders refuse and identify the missing plugin,
+  unless the person chooses Render without missing effects (Render Queue) or
+  `effectcraft-cli render --without-missing-effects` (`renderQueue.render
+  {withoutMissingEffects: true}`): that renders a copy without those effects,
+  logs and announces which, and leaves the project unchanged.
+- Plugin data (`effectcraft.session` 1.3, `project.data.get/set`): one JSON
+  object per plugin id in `Project.plugin_data` and `Layer.plugin_data`, optional
+  fields left out when empty, so schema 2 is unchanged and older files open with
+  none. Written through one `Session::edit` inside the event's undo group; data of
+  missing plugins is saved unchanged and makes the project reference the plugin.
+- Plugins running at an unexpected quit appear on Settings ▸ Plugins ▸ Problems,
+  which opens once at startup; Turn off quarantines them.
 - `--safe-mode` or `EFFECTCRAFT_SAFE_MODE=1` prevents plugin code loading.
 - The layer table assigns plugins to L4 with plugins→engine and host→plugins
   edges. No old implementation identifiers remain (the new plural crate is
@@ -45,8 +56,9 @@ catalogue implementation have been removed. Old packages need a schema-2
 - **B9-FEATURE-STATE:** effect property groups currently identify the contribution
   by `<plugin>/<effect>` and keep ordinary parameters. Add per-instance version,
   contract, state_version and opaque state, with downgrade placeholders. Project
-  package readiness now checks recorded contribution state versions; per-instance
-  opaque state remains deferred.
+  package readiness now checks recorded contribution state versions. Plugins can
+  keep opaque data per layer and per project (`project.data.*`); per-effect-instance
+  state remains deferred.
 - **B4-DISPOSE (deferred):** unload unregisters effects and stops workers immediately,
   without calling guest code. Revocation must not wait for guest cleanup. The
   reserved dispose event is not a beta delivery guarantee.

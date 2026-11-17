@@ -11,6 +11,7 @@ use serde_json::{Value, json};
 
 /// What an event captured at its start.
 pub struct Scope {
+    pub plugin: craft_ext_core::id::ExtensionId,
     pub comp: Option<ItemId>,
     pub selection: Vec<LayerId>,
     /// The plugin's display name (notifications are prefixed with it).
@@ -128,6 +129,43 @@ fn local_id(s: &str) -> bool {
 }
 
 /// Runs one op. `own_panels` are the plugin's declared panel ids.
+/// `project.data.*`: the calling plugin's own entry of the project's or a layer's `plugin_data`,
+/// written through one engine edit inside the event's undo group.
+fn plugin_data(s: &mut Session, scope: &Scope, op: &str, args: &Value) -> Result<Value, OpError> {
+    use craft_ext_host::data::{PluginData, Target, handle};
+    let key = scope.plugin.as_str();
+    let layer = match Target::parse(args)? {
+        Target::Document => None,
+        Target::Layer(id) => Some((comp(scope)?, LayerId(id))),
+        Target::Node(_) => return Err(invalid("EffectCraft keeps data with the project or on a layer: {\"layer\": id}")),
+    };
+    let saved = match layer {
+        None => s.project.plugin_data.get(key).cloned(),
+        Some((cid, id)) => {
+            let c = s.project.comp(cid).ok_or_else(|| OpError::new(Code::Stale, "the composition is gone"))?;
+            c.layer(id).ok_or_else(|| OpError::new(Code::NotFound, "no such layer"))?.plugin_data.get(key).cloned()
+        }
+    };
+    let mut data = PluginData::from_json(saved.as_ref());
+    let out = handle(op, args, &mut data)?;
+    let next = data.to_json();
+    if op == "project.data.set" && next != saved {
+        s.edit(&format!("{} data", scope.plugin_name), None, |p, _| {
+            let map = match layer {
+                None => &mut p.plugin_data,
+                Some((cid, id)) => &mut p.comp_mut(cid).and_then(|c| c.layer_mut(id)).ok_or_else(|| effectcraft_engine::EngineError::Other("no such layer".into()))?.plugin_data,
+            };
+            match next {
+                Some(v) => map.insert(key.to_string(), v),
+                None => map.remove(key),
+            };
+            Ok(())
+        })
+        .map_err(engine)?;
+    }
+    Ok(out)
+}
+
 pub fn run(s: &mut Session, scope: &Scope, op: &str, args: Value, own_panels: &[String]) -> Result<Outcome, OpError> {
     let v = match op {
         "canvas.overlay.set" => {
@@ -227,6 +265,7 @@ pub fn run(s: &mut Session, scope: &Scope, op: &str, args: Value, own_panels: &[
             }
             json!({"effects": r["effects"], "paths": r["paths"]})
         }
+        "project.data.get" | "project.data.set" => plugin_data(s, scope, op, &args)?,
         "ui.notify" => {
             let message = text(&args, "message", MAX_MESSAGE)?;
             let error = args.get("error").and_then(Value::as_bool).unwrap_or(false);
@@ -346,7 +385,7 @@ mod tests {
         let lut = format!("{}/lut", r["paths"][0].as_str().unwrap());
         s.execute("prop.set", json!({"layer":id,"path":lut,"value":"/secret/grade.cube"})).unwrap();
         s.path = Some("/secret/project.ecproj".into());
-        let scope = Scope { comp: s.active_comp_id(), selection: vec![LayerId(id)], plugin_name: "Test".into(), ui_level: craft_ext_core::ui::tree::UI_LEVEL };
+        let scope = Scope { plugin: craft_ext_core::id::ExtensionId::new("test.plugin").unwrap(), comp: s.active_comp_id(), selection: vec![LayerId(id)], plugin_name: "Test".into(), ui_level: craft_ext_core::ui::tree::UI_LEVEL };
         for (op, args) in [("prop.get", json!({"layer":id,"path":lut})), ("layer.tree", json!({"layer":id})), ("project.summary", json!({}))] {
             let Ok(Outcome::Value(v)) = run(&mut s, &scope, op, args, &[]) else { panic!("{op} failed") };
             assert!(!v.to_string().contains("secret"), "{op} leaked a path: {v}");
@@ -358,7 +397,7 @@ mod tests {
         let mut s = Session::default();
         s.execute("comp.new", json!({"width":32,"height":32})).unwrap();
         let id = s.execute("layer.newNull", json!({})).unwrap()["layer"].as_u64().unwrap();
-        let scope = Scope { comp: s.active_comp_id(), selection: vec![LayerId(id)], plugin_name: "Test".into(), ui_level: craft_ext_core::ui::tree::UI_LEVEL };
+        let scope = Scope { plugin: craft_ext_core::id::ExtensionId::new("test.plugin").unwrap(), comp: s.active_comp_id(), selection: vec![LayerId(id)], plugin_name: "Test".into(), ui_level: craft_ext_core::ui::tree::UI_LEVEL };
         for (t, v) in [(0.0, 0.0), (1.0, 100.0)] {
             run(&mut s, &scope, "prop.addKey", json!({"layer":id,"path":"transform/opacity","value":v,"time":t}), &[]).unwrap_or_else(|e| panic!("{e}"));
         }
@@ -375,10 +414,10 @@ mod tests {
     #[test]
     fn property_keyframes_markers_and_group_undo() {
         let mut s = Session::default();
-        let empty = Scope { comp: None, selection: vec![], plugin_name: "Test".into(), ui_level: craft_ext_core::ui::tree::UI_LEVEL };
+        let empty = Scope { plugin: craft_ext_core::id::ExtensionId::new("test.plugin").unwrap(), comp: None, selection: vec![], plugin_name: "Test".into(), ui_level: craft_ext_core::ui::tree::UI_LEVEL };
         assert!(run(&mut s, &empty, "comp.new", json!({"width":32,"height":32}), &[]).is_ok());
         let id = s.execute("layer.newNull", json!({})).unwrap()["layer"].as_u64().unwrap();
-        let scope = Scope { comp: s.active_comp_id(), selection: vec![LayerId(id)], plugin_name: "Test".into(), ui_level: craft_ext_core::ui::tree::UI_LEVEL };
+        let scope = Scope { plugin: craft_ext_core::id::ExtensionId::new("test.plugin").unwrap(), comp: s.active_comp_id(), selection: vec![LayerId(id)], plugin_name: "Test".into(), ui_level: craft_ext_core::ui::tree::UI_LEVEL };
         let mark = s.begin_group();
         run(&mut s, &scope, "prop.addKey", json!({"layer":id,"path":"transform/position","value":[10,20],"time":0}), &[]).unwrap_or_else(|e| panic!("{e}"));
         run(&mut s, &scope, "marker.add", json!({"label":"Cue","time":0}), &[]).unwrap_or_else(|e| panic!("{e}"));
@@ -389,5 +428,85 @@ mod tests {
         assert!(s.project.comp(scope.comp.unwrap()).unwrap().markers.is_empty());
         assert!(run(&mut s, &scope, "prop.set", json!({"layer":9999,"path":"transform/position","value":[1,2]}), &[]).is_err());
         assert!(run(&mut s, &scope, "prop.addKey", json!({"layer":id,"path":"missing","value":0}), &[]).is_err());
+    }
+
+    fn scope_for(s: &Session, plugin: &str) -> Scope {
+        Scope { plugin: craft_ext_core::id::ExtensionId::new(plugin).unwrap(), comp: s.active_comp_id(), selection: vec![], plugin_name: plugin.into(), ui_level: craft_ext_core::ui::tree::UI_LEVEL }
+    }
+
+    fn value(r: Result<Outcome, OpError>) -> Value {
+        match r {
+            Ok(Outcome::Value(v)) => v,
+            Ok(Outcome::Ui(_)) => panic!("not a value"),
+            Err(e) => panic!("{e}"),
+        }
+    }
+
+    #[test]
+    fn plugin_data_round_trips_through_the_project_file() {
+        let mut s = Session::default();
+        s.execute("comp.new", json!({"width":32,"height":32})).unwrap();
+        let id = s.execute("layer.newNull", json!({})).unwrap()["layer"].as_u64().unwrap();
+        let scope = scope_for(&s, "io.github.alice.rig");
+        value(run(&mut s, &scope, "project.data.set", json!({"key":"rig","value":{"bones":3},"target":{"layer":id}}), &[]));
+        value(run(&mut s, &scope, "project.data.set", json!({"key":"theme","value":"dark"}), &[]));
+        let file = std::env::temp_dir().join(format!("ec-plugin-data-{}.ecproj", std::process::id()));
+        s.execute("file.saveAs", json!({"path": file})).unwrap();
+        let mut reopened = Session::default();
+        reopened.execute("file.open", json!({"path": file})).unwrap();
+        let _ = std::fs::remove_file(&file);
+        let scope = scope_for(&reopened, "io.github.alice.rig");
+        let got: Vec<Value> = [json!({"key":"rig","target":{"layer":id}}), json!({"key":"theme"}), json!({"key":"never"})]
+            .into_iter()
+            .map(|a| value(run(&mut reopened, &scope, "project.data.get", a, &[])))
+            .collect();
+        assert_eq!(got, vec![json!({"bones":3}), json!("dark"), Value::Null]);
+        assert_eq!(reopened.project.plugin_data.get("io.github.alice.rig"), Some(&json!({"theme":"dark"})));
+        assert!(run(&mut reopened, &scope, "project.data.get", json!({"key":"rig","target":{"node":id}}), &[]).is_err());
+    }
+
+    #[test]
+    fn plugin_data_is_private_to_its_plugin_and_undone_with_the_event() {
+        let mut s = Session::default();
+        s.execute("comp.new", json!({"width":32,"height":32})).unwrap();
+        let (mine, other) = (scope_for(&s, "io.github.alice.rig"), scope_for(&s, "io.github.bob.spy"));
+        value(run(&mut s, &mine, "project.data.set", json!({"key":"rig","value":1}), &[]));
+        assert_eq!(value(run(&mut s, &other, "project.data.get", json!({"key":"rig"}), &[])), Value::Null);
+        value(run(&mut s, &other, "project.data.set", json!({"key":"rig","value":2}), &[]));
+        assert_eq!(value(run(&mut s, &mine, "project.data.get", json!({"key":"rig"}), &[])), json!(1));
+        let undo = s.history.undo.len();
+        let mark = s.begin_group();
+        value(run(&mut s, &mine, "project.data.set", json!({"key":"rig","value":null}), &[]));
+        value(run(&mut s, &mine, "project.data.set", json!({"key":"pose","value":[0,1]}), &[]));
+        s.finish_group(mark, "Rig", true);
+        assert_eq!(s.history.undo.len(), undo + 1, "one undo step");
+        assert_eq!(s.project.plugin_data.get("io.github.alice.rig"), Some(&json!({"pose":[0,1]})));
+        s.execute("edit.undo", json!({})).unwrap();
+        assert_eq!(s.project.plugin_data.get("io.github.alice.rig"), Some(&json!({"rig":1})));
+        assert_eq!(s.project.plugin_data.get("io.github.bob.spy"), Some(&json!({"rig":2})));
+    }
+
+    #[test]
+    fn data_of_a_missing_plugin_survives_editing_and_saving() {
+        let mut s = Session::default();
+        s.execute("comp.new", json!({"width":32,"height":32})).unwrap();
+        let id = s.execute("layer.newNull", json!({"name":"Rig"})).unwrap()["layer"].as_u64().unwrap();
+        let cid = s.active_comp_id().unwrap();
+        s.edit("seed", None, |p, _| {
+            p.plugin_data.insert("io.github.gone.rig".into(), json!({"v":7,"unknown":{"newer":true}}));
+            p.comp_mut(cid).unwrap().layer_mut(LayerId(id)).unwrap().plugin_data.insert("io.github.gone.rig".into(), json!({"bone":"hip"}));
+            Ok(())
+        })
+        .unwrap();
+        s.execute("layer.select", json!({"layers":[id]})).unwrap();
+        s.execute("prop.set", json!({"layer":id,"path":"transform/opacity","value":50})).unwrap();
+        let file = std::env::temp_dir().join(format!("ec-plugin-gone-{}.ecproj", std::process::id()));
+        s.execute("file.saveAs", json!({"path": file})).unwrap();
+        let mut reopened = Session::default();
+        reopened.execute("file.open", json!({"path": file})).unwrap();
+        let _ = std::fs::remove_file(&file);
+        assert_eq!(reopened.project.plugin_data.get("io.github.gone.rig"), Some(&json!({"v":7,"unknown":{"newer":true}})));
+        let layer = reopened.project.comp(cid).unwrap().layer(LayerId(id)).unwrap();
+        assert_eq!(layer.plugin_data.get("io.github.gone.rig"), Some(&json!({"bone":"hip"})));
     }
 }

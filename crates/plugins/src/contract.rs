@@ -15,7 +15,7 @@ pub const APP: &str = "effectcraft";
 
 /// The contracts this build provides (B2). Keep `craft-ext-cli`'s `known_apps` table in step.
 pub fn provided() -> Provided {
-    Provided::new(&[("raster.filter", 1, 0), ("effectcraft.session", 1, 2), ("resource.preset", 1, 0), ("resource.lut", 1, 0), ("craft-theme", 1, 0)])
+    Provided::new(&[("raster.filter", 1, 0), ("effectcraft.session", 1, 3), ("resource.preset", 1, 0), ("resource.lut", 1, 0), ("craft-theme", 1, 0)])
 }
 
 thread_local! {
@@ -104,6 +104,8 @@ fn build() -> AppContract {
             op("layer.newSolid",OpKind::Edit,"Create a solid layer in the captured composition.","{name?,color?,width?,height?}","object",edit_document,"`document.edit:document`"),
             op("layer.newNull",OpKind::Edit,"Create a null for motion paths and controls.","{name?}","object",edit_document,"`document.edit:document`"),
             op("layer.select",OpKind::Edit,"Select layer ids in the captured composition.","{layers:[id]}","object",edit_document,"`document.edit:document`"),
+            op("project.data.get",OpKind::Query,"Read one of this plugin's keys kept with the project, or on a layer of the captured composition (`target: {layer: id}`).","{key,target?}","the stored JSON value, or null",read_document,"`document.read:document`"),
+            op("project.data.set",OpKind::Edit,"Keep one key of this plugin's data with the project or on a layer; saved in the .ecproj, kept when the plugin is missing, undone with the event (null deletes).","{key,value,target?}","null",edit_document,"`document.edit:document`"),
 
             op(
                 "selection.get",
