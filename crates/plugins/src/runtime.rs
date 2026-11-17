@@ -22,7 +22,7 @@ use craft_ext_core::project::{PluginRef, Source, Status};
 use craft_ext_core::version::Version;
 use craft_ext_host::api::{AppApi, AppContract, Code, Grants, Invocation, OpError};
 pub use craft_ext_host::jobs::{JobBoard, JobInfo, JobState};
-use craft_ext_host::native::{Confinement, Helper};
+use craft_ext_host::native::{Confinement, Helper, HelperLaunch};
 use craft_ext_host::wasm::{LogFn, MAX_MODULE_BYTES, Plugin, Session as WasmSession};
 use craft_ext_store::Manager;
 use craft_ext_store::state::Origin;
@@ -1129,7 +1129,7 @@ fn worker_main(
             Runner::Wasm(s)
         }),
         Program::Native { exe, work, confinement } => {
-            Helper::start_confined(&owner.plugin, owner.version, &exe, &work, api, grants, log, &confinement).map(|mut h| {
+            Helper::start(&owner.plugin, owner.version, &HelperLaunch { exe, work, confinement }, api, grants, log).map(|mut h| {
                 h.set_jobs(owner.jobs.clone());
                 Runner::Native(h)
             })
