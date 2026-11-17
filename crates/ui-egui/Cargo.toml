@@ -42,7 +42,6 @@ bytemuck = { workspace = true }
 # Craft plugins: the shared manager UI, project prompt and plugin UI trees (native only).
 effectcraft-plugins = { workspace = true }
 craft-ext-core = { workspace = true }
-craft-ext-store = { workspace = true }
 craft-ext-ui = { workspace = true }
 # Floating panels open in OS windows of their own on desktop; the web keeps them in the page.
 craft-ui = { workspace = true, features = ["native-windows"] }

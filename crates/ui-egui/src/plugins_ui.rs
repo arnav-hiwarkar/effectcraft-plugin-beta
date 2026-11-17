@@ -1,9 +1,9 @@
 use std::cell::RefCell;
 use std::sync::Arc;
 
-use craft_ext_store::Manager;
+use craft_ext_ui::craft_ext_manager::{Config, Word};
 use craft_ext_ui::plugin_ui::{Host, PluginUi};
-use craft_ext_ui::{ManagerView, ProjectPrompt};
+use craft_ext_ui::{PluginManager, ProjectPrompt};
 use effectcraft_plugins::runtime::{JobInfo, JobState};
 use serde_json::{Value, json};
 
@@ -11,8 +11,7 @@ use crate::EffectcraftApp;
 
 #[derive(Default)]
 struct State {
-    view: Option<ManagerView>,
-    manager: Option<Arc<Manager>>,
+    view: Option<PluginManager>,
     manager_error: Option<String>,
     prompt: Option<ProjectPrompt>,
     prompt_document: Option<Arc<()>>,
@@ -26,14 +25,13 @@ thread_local! {
     static STATE: RefCell<State> = RefCell::new(State::default());
 }
 
-fn manager(st: &mut State) -> Option<Arc<Manager>> {
-    if st.manager.is_none() && st.manager_error.is_none() {
-        match effectcraft_plugins::manager() {
-            Ok(m) => st.manager = Some(Arc::new(m)),
-            Err(e) => st.manager_error = Some(e),
-        }
-    }
-    st.manager.clone()
+fn config() -> Result<Config, String> {
+    let app = craft_ext_core::id::AppId::new(effectcraft_plugins::contract::APP).map_err(|e| e.to_string())?;
+    Ok(Config::app(effectcraft_plugins::store_root()?, app, effectcraft_plugins::contract::provided(), effectcraft_plugins::runtime::platform()))
+}
+
+fn words(word: Word) -> String {
+    crate::i18n::tr(word.english()).to_string()
 }
 
 pub fn frame(app: &mut EffectcraftApp, ctx: &egui::Context) {
@@ -68,9 +66,14 @@ pub fn frame(app: &mut EffectcraftApp, ctx: &egui::Context) {
             st.prompt_document = None;
         }
         if let Some(statuses) = rt.take_project_prompt(&app.session) {
-            st.prompt_document = Some(app.session.plugin_document_token());
-            st.prompt_plugins = statuses.iter().map(|(r, _)| r.id.clone()).collect();
-            st.prompt = Some(ProjectPrompt::new(statuses));
+            match config() {
+                Ok(config) => {
+                    st.prompt_document = Some(app.session.plugin_document_token());
+                    st.prompt_plugins = statuses.iter().map(|(r, _)| r.id.clone()).collect();
+                    st.prompt = Some(ProjectPrompt::new(config, statuses));
+                }
+                Err(e) => log::warn!("plugins: {e}"),
+            }
         }
     });
     if !app.session.plugins.as_ref().is_none_or(|p| p.surfaces().is_empty() && p.commands().is_empty()) {
@@ -81,10 +84,8 @@ pub fn frame(app: &mut EffectcraftApp, ctx: &egui::Context) {
 pub fn show(app: &mut EffectcraftApp, ctx: &egui::Context) {
     STATE.with(|st| {
         let mut st = st.borrow_mut();
-        if st.prompt.is_some()
-            && let Some(m) = manager(&mut st)
-            && let Some(p) = st.prompt.as_mut()
-            && let Some(outcome) = p.show(ctx, &m)
+        if let Some(p) = st.prompt.as_mut()
+            && let Some(outcome) = p.show(ctx, &words)
         {
             let ids = if outcome.open_without { st.prompt_plugins.clone() } else { outcome.skipped };
             if let Some(rt) = effectcraft_plugins::runtime() {
@@ -211,31 +212,8 @@ pub fn manager_page(app: &mut EffectcraftApp, ui: &mut egui::Ui) {
     if effectcraft_plugins::runtime().is_some_and(|r| r.safe_mode()) {
         ui.label(crate::i18n::tr("Safe mode: no plugin code runs this session. Changes apply after a restart without --safe-mode."));
     }
-    if let Some(rt) = app.session.plugins.clone() {
-        let turned_off = effectcraft_plugins::runtime().map(|r| r.turned_off()).unwrap_or_default();
-        for id in rt.paused() {
-            let reason = turned_off
-                .iter()
-                .find(|t| t.plugin == id)
-                .map_or_else(|| crate::i18n::tr("paused after repeated failures").to_string(), |t| format!("{}: {}", t.name, t.reason));
-            ui.horizontal(|ui| {
-                ui.label(format!("{id}: {reason}"));
-                let r = ui.button(crate::i18n::tr("Resume"));
-                app.auto.add(&format!("plugin.resume.{id}"), r.rect, "Resume");
-                if r.clicked() {
-                    if let Err(e) = rt.resume(&mut app.session, &id) {
-                        app.ui.status = e;
-                    }
-                }
-            });
-        }
-    }
     STATE.with(|st| {
         let mut st = st.borrow_mut();
-        let Some(m) = manager(&mut st) else {
-            ui.label(format!("{}: {}", crate::i18n::tr("Plugins are unavailable"), st.manager_error.clone().unwrap_or_default()));
-            return;
-        };
         let mut choice = st.renderer.choice();
         let engine = egui::ComboBox::from_id_salt("plugin-ui-engine").selected_text(format!("{choice:?}")).show_ui(ui, |ui| {
             ui.selectable_value(&mut choice, craft_ext_ui::plugin_ui::EngineChoice::Egui, "Egui");
@@ -245,9 +223,44 @@ pub fn manager_page(app: &mut EffectcraftApp, ui: &mut egui::Ui) {
         if choice != st.renderer.choice() {
             st.renderer = PluginUi::new(choice);
         }
-        let view = st.view.get_or_insert_with(ManagerView::new);
-        view.show(ui, &m);
+        if st.view.is_none() && st.manager_error.is_none() {
+            match config() {
+                Ok(config) => st.view = Some(PluginManager::new(config)),
+                Err(e) => st.manager_error = Some(e),
+            }
+        }
+        let Some(view) = st.view.as_mut() else {
+            ui.label(format!("{}: {}", crate::i18n::tr("Plugins are unavailable"), st.manager_error.clone().unwrap_or_default()));
+            return;
+        };
+        view.show_with_app_problems(ui, &words, |ui| paused_problems(app, ui));
     });
+}
+
+fn paused_problems(app: &mut EffectcraftApp, ui: &mut egui::Ui) -> bool {
+    let Some(rt) = app.session.plugins.clone() else { return false };
+    let paused = rt.paused();
+    let turned_off = effectcraft_plugins::runtime().map(|r| r.turned_off()).unwrap_or_default();
+    for id in &paused {
+        let reason = turned_off
+            .iter()
+            .find(|t| &t.plugin == id)
+            .map_or_else(|| crate::i18n::tr("paused after repeated failures").to_string(), |t| format!("{}: {}", t.name, t.reason));
+        ui.group(|ui| {
+            ui.set_width(ui.available_width());
+            ui.horizontal(|ui| {
+                ui.label(format!("{id}: {reason}"));
+                let r = ui.button(crate::i18n::tr("Resume"));
+                app.auto.add(&format!("plugin.resume.{id}"), r.rect, "Resume");
+                if r.clicked()
+                    && let Err(e) = rt.resume(&mut app.session, id)
+                {
+                    app.ui.status = e;
+                }
+            });
+        });
+    }
+    !paused.is_empty()
 }
 
 struct AppHost<'a>(&'a mut EffectcraftApp);
