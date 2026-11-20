@@ -95,12 +95,17 @@ impl Recording {
         };
         let on_time = p.shown == Some((comp, clock.frame));
         let now = Due { frame: clock.frame, generation: clock.generation, shown: on_time };
-        let Some(due) = self.due.replace(now).filter(|due| due.generation == clock.generation) else { return (0, 0) };
+        let Some(due) = self.due.filter(|due| due.generation == clock.generation) else {
+            self.due = Some(now);
+            return (0, 0);
+        };
         if due.frame == clock.frame {
             self.due = Some(Due { shown: due.shown || on_time, ..now });
             return (0, 0);
         }
-        clock.passed(due.frame).map_or((0, 0), |passed| (passed, u64::from(!due.shown) + passed.saturating_sub(1)))
+        let Some(passed) = clock.passed(due.frame) else { return (0, 0) };
+        self.due = Some(now);
+        (passed, u64::from(!due.shown) + passed.saturating_sub(1))
     }
 
     fn seek(&mut self, p: &Playhead, start: f64, end: f64) -> Option<f64> {

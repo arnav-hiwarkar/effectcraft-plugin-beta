@@ -150,8 +150,17 @@ fn a_loop_wrap_counts_the_frames_to_the_end_and_from_the_start() {
 
 #[test]
 fn a_small_step_back_in_one_generation_counts_nothing_and_does_not_count_the_loop() {
-    assert_eq!(counts([on(100, 100, 1, 299, 1), on(99, 99, 1, 299, 1), on(100, 100, 1, 299, 1)]), [(0, 0), (0, 0), (1, 0)]);
+    assert_eq!(counts([on(100, 100, 1, 299, 1), on(99, 99, 1, 299, 1), on(100, 100, 1, 299, 1), on(101, 101, 1, 299, 1)]), [(0, 0), (0, 0), (0, 0), (1, 0)]);
     assert_eq!(counts([on(297, 297, 1, 299, 1), on(2, 2, 1, 299, 1)]), [(0, 0), (5, 4)]);
+}
+
+#[test]
+fn frames_counted_before_a_step_back_are_not_counted_again_after_it() {
+    let stalled = (1..=5).map(|k| Playhead { shown: Some((7, 0)), ..playing(k, k) });
+    let resumed = (1..=7).map(|k| playing(k, k));
+    let counted = counts(std::iter::once(playing(0, 0)).chain(stalled).chain(resumed));
+    assert_eq!(counted[6..], [(0, 0), (0, 0), (0, 0), (0, 0), (0, 0), (1, 0), (1, 0)]);
+    assert_eq!(counted.iter().fold((0, 0), |(p, l), (fp, fl)| (p + fp, l + fl)), (7, 4));
 }
 
 #[test]
