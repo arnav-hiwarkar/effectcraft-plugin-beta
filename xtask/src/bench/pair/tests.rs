@@ -1,4 +1,4 @@
-use craft_testkit::pair::Arm;
+use craft_testkit::pair::{self, Arm};
 use serde_json::json;
 
 use super::*;

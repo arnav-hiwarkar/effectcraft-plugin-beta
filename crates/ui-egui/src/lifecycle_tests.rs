@@ -209,6 +209,51 @@ fn playback_advances_on_a_logic_only_tick() {
     assert_eq!(app.ui_passes(), 0);
 }
 
+struct NeverRenders;
+
+impl crate::frames::RemoteFrames for NeverRenders {
+    fn slots(&self) -> usize {
+        64
+    }
+
+    fn start(&self, _: crate::frames::RemoteJob, _: crate::frames::RemoteDone) {}
+}
+
+#[test]
+fn a_preview_held_on_frames_that_never_render_counts_each_frame_its_clock_passes_as_late() {
+    let ctx = egui::Context::default();
+    let frame = eframe::Frame::_new_kittest();
+    let mut app = app_with_comp();
+    app.frames.set_remote(Some(Arc::new(NeverRenders)));
+    app.playback.playing = true;
+    app.playback.plan = Some(effectcraft_engine::preview::PreviewPlan {
+        start: 0,
+        end: 15,
+        first: 0,
+        step: 1,
+        fps: 16.0,
+        looping: true,
+        cache_first: false,
+        video: true,
+        audio: false,
+        origin: Tick::ZERO,
+    });
+    app.playback.generation = 1;
+    app.frame_probe.set_recording(true);
+    let mut counts = Vec::new();
+    for _ in 0..12 {
+        app.clock_mut().advance(0.0625);
+        hidden_tick(&mut app, &ctx, &frame);
+        let now = app.now();
+        let shown = app.viewer_shown.map(|(_, key)| key);
+        app.frame_probe.start(|| now);
+        app.frame_probe.finish(now, || now, || crate::app::playhead(&app.session, &app.playback, app.audio.as_ref(), shown, now));
+        counts.extend(app.frame_probe.take().unwrap().frames.iter().map(|f| (f.played, f.late)));
+    }
+    assert!(app.playback.waiting && app.playback.generation == 1, "the preview holds in one clock generation");
+    assert_eq!(counts.iter().fold((0, 0), |(p, l), (fp, fl)| (p + fp, l + fl)), (11, 11), "{counts:?}");
+}
+
 #[test]
 fn workspace_layout_autosave_writes_on_a_hidden_tick() {
     let store = Arc::new(MemoryConfig::default());

@@ -489,6 +489,7 @@ impl EffectcraftApp {
         }
         if self.frames.is_cached(&FrameKey { frame: target, ..series }) {
             self.playback.waiting = false;
+            self.playback.held_from = None;
             if target != cur {
                 self.session.set_time(fr.tick_of(target));
                 self.playback.frame_shown(now);
@@ -496,6 +497,7 @@ impl EffectcraftApp {
         } else {
             // Not cached yet: hold the clock at the current frame (cache first, then play).
             self.playback.waiting = true;
+            self.playback.held_from.get_or_insert((self.playback.start_wall, self.playback.start_frame));
             self.step_down(now, pass.scale);
             let next = pass.frame_after(cur, 1).unwrap_or(cur);
             if self.frames.is_cached(&FrameKey { frame: next, ..series }) {

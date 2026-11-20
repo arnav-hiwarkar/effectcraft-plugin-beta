@@ -43,10 +43,14 @@ pub struct Clock {
 }
 
 impl Clock {
-    fn passed(&self, from: i64) -> u64 {
+    fn passed(&self, from: i64) -> Option<u64> {
         let step = self.step.max(1);
         let between = |a: i64, b: i64| u64::try_from((b - a) / step).unwrap_or(0);
-        if self.frame >= from { between(from, self.frame) } else { between(from, self.last) + 1 + between(self.first, self.frame) }
+        if self.frame >= from {
+            return Some(between(from, self.frame));
+        }
+        let wrap = between(from, self.last) + 1 + between(self.first, self.frame);
+        (wrap < between(self.frame, from)).then_some(wrap)
     }
 }
 
@@ -96,8 +100,7 @@ impl Recording {
             self.due = Some(Due { shown: due.shown || on_time, ..now });
             return (0, 0);
         }
-        let passed = clock.passed(due.frame);
-        (passed, u64::from(!due.shown) + passed.saturating_sub(1))
+        clock.passed(due.frame).map_or((0, 0), |passed| (passed, u64::from(!due.shown) + passed.saturating_sub(1)))
     }
 
     fn seek(&mut self, p: &Playhead, start: f64, end: f64) -> Option<f64> {
