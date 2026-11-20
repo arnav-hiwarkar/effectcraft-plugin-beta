@@ -1555,7 +1555,7 @@ dependencies = [
 [[package]]
 name = "craft-testkit"
 version = "0.1.0"
-source = "git+https://github.com/arnav-hiwarkar/craft-libs-plugin-beta?rev=18b5a38df7a2bcc801191a91ff1ac217cad4c024#18b5a38df7a2bcc801191a91ff1ac217cad4c024"
+source = "git+https://github.com/arnav-hiwarkar/craft-libs-plugin-beta?rev=e13293baec3a44d07d4b3b2f330c2bd09ead8d65#e13293baec3a44d07d4b3b2f330c2bd09ead8d65"
 
 [[package]]
 name = "craft-tga"

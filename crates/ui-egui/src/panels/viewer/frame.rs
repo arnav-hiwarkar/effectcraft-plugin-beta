@@ -149,7 +149,6 @@ pub(super) fn show_frame(app: &mut EffectcraftApp, ctx: &egui::Context, key: cra
     let opts = zoom_texture_options(smooth);
     match img {
         FrameImage::Cpu(img) => {
-            let since = app.frame_probe.stamp(|| app.clock.now());
             // Frames wider or taller than the GPU's texture limit go up averaged down too (#201).
             let max = crate::frames::max_texture_side(ctx);
             let fitted = crate::frames::fit_shared_texture_by(&img, max, minify);
@@ -160,7 +159,6 @@ pub(super) fn show_frame(app: &mut EffectcraftApp, ctx: &egui::Context, key: cra
                 }
                 _ => app.viewer_tex = Some((ctx.load_texture("viewer-frame", fitted, opts), key, minify)),
             }
-            app.frame_probe.add(crate::frame_probe::Stage::Upload, since, || app.clock.now());
             app.viewer_shown = app.viewer_tex.as_ref().map(|(t, k, _)| (Some(t.id()), *k));
             app.viewer_image = Some(img);
             app.viewer_f16 = None;

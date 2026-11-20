@@ -408,7 +408,9 @@ fn phase_frame(app: &mut EffectcraftApp, v: &mut Vw<'_>) {
         // (Half-float frames have no such texture: the display pass makes mips.)
         let refit = !app.viewer_on_gpu() && app.viewer_tex.as_ref().is_some_and(|(_, _, m)| *m != minify);
         if stale || refit {
+            let since = app.frame_probe.stamp(|| app.clock.now());
             show_frame(app, &ctx, k, img, minify);
+            app.frame_probe.add(crate::frame_probe::Stage::Upload, since, || app.clock.now());
         } else if let Some((_, s)) = app.viewer_shown.as_mut() {
             // The same frame at a later revision (an edit elsewhere, an undo): it shows that one.
             s.revision = k.revision;

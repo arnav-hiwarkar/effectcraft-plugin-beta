@@ -2,7 +2,7 @@ use super::clipboard::copy_image;
 use super::prefetch::sound_frame;
 use super::window::fit_window;
 use super::*;
-use crate::frame_probe::{Playhead, Stage};
+use crate::frame_probe::{Clock, Playhead, Stage};
 
 impl EffectcraftApp {
     /// Completed, non-discarded UI passes since launch.
@@ -382,7 +382,8 @@ impl EffectcraftApp {
         self.frame_probe.add(Stage::Build, since, || self.clock.now());
         if !ui.ctx().will_discard() {
             let shown = self.viewer_shown.map(|(_, key)| key);
-            self.frame_probe.finish(|| self.clock.now(), || playhead(&self.session, &self.playback, self.audio.as_ref(), shown));
+            let (tick, clock) = (self.now, &self.clock);
+            self.frame_probe.finish(tick, || clock.now(), || playhead(&self.session, &self.playback, self.audio.as_ref(), shown, clock.now()));
         }
     }
 
@@ -748,14 +749,21 @@ impl EffectcraftApp {
     }
 }
 
-fn playhead(session: &Session, playback: &Playback, audio: Option<&crate::audio::AudioPlayback>, shown: Option<FrameKey>) -> Playhead {
+fn playhead(session: &Session, playback: &Playback, audio: Option<&crate::audio::AudioPlayback>, shown: Option<FrameKey>, now: f64) -> Playhead {
     let comp = session.active_comp_id().and_then(|cid| session.project.comp(cid).map(|c| (cid.0, c.frame_rate)));
-    let sound = comp.zip(playback.plan.filter(|p| p.video)).zip(audio).map(|(((_, fr), p), a)| (sound_frame(a, fr, p.start, p.end, p.step), p.step));
+    let plan = playback.plan.filter(|p| p.video && playback.playing && !playback.caching);
+    let clock = comp.zip(plan).and_then(|((_, fr), p)| {
+        let frame = match audio {
+            Some(a) => Some(sound_frame(a, fr, p.start, p.end, p.step)),
+            None => p.frame_after(playback.start_frame, ((now - playback.start_wall) * p.fps / p.step.max(1) as f64).floor() as i64),
+        }?;
+        Some(Clock { frame, step: p.step, first: p.start, last: p.end, generation: playback.generation })
+    });
     Playhead {
         playing: playback.playing,
         current: comp.map(|(cid, fr)| (cid, fr.frame_at(session.time()))),
         shown: shown.map(|key| (key.comp, key.frame)),
-        sound,
+        clock,
     }
 }
 

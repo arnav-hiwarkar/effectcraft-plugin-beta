@@ -30,7 +30,24 @@ pub struct Playhead {
     pub playing: bool,
     pub current: Option<(u64, i64)>,
     pub shown: Option<(u64, i64)>,
-    pub sound: Option<(i64, i64)>,
+    pub clock: Option<Clock>,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Clock {
+    pub frame: i64,
+    pub step: i64,
+    pub first: i64,
+    pub last: i64,
+    pub generation: u64,
+}
+
+impl Clock {
+    fn passed(&self, from: i64) -> u64 {
+        let step = self.step.max(1);
+        let between = |a: i64, b: i64| u64::try_from((b - a) / step).unwrap_or(0);
+        if self.frame >= from { between(from, self.frame) } else { between(from, self.last) + 1 + between(self.first, self.frame) }
+    }
 }
 
 #[derive(Debug, Default, PartialEq, serde::Serialize)]
@@ -52,6 +69,7 @@ struct Open {
 #[derive(Clone, Copy, Debug)]
 struct Due {
     frame: i64,
+    generation: u64,
     shown: bool,
 }
 
@@ -67,23 +85,19 @@ struct Recording {
 
 impl Recording {
     fn playback(&mut self, p: &Playhead) -> (u64, u64) {
-        let Some((comp, sound)) = p.current.map(|(comp, _)| comp).zip(p.sound.map(|(frame, _)| frame)).filter(|_| p.playing) else {
+        let Some((comp, clock)) = p.current.map(|(comp, _)| comp).zip(p.clock).filter(|_| p.playing) else {
             self.due = None;
             return (0, 0);
         };
-        let step = p.sound.map_or(1, |(_, step)| step.max(1));
-        let on_time = p.shown == Some((comp, sound));
-        let Some(due) = self.due else {
-            self.due = Some(Due { frame: sound, shown: on_time });
-            return (0, 0);
-        };
-        if due.frame == sound {
-            self.due = Some(Due { frame: sound, shown: due.shown || on_time });
+        let on_time = p.shown == Some((comp, clock.frame));
+        let now = Due { frame: clock.frame, generation: clock.generation, shown: on_time };
+        let Some(due) = self.due.replace(now).filter(|due| due.generation == clock.generation) else { return (0, 0) };
+        if due.frame == clock.frame {
+            self.due = Some(Due { shown: due.shown || on_time, ..now });
             return (0, 0);
         }
-        let skipped = u64::try_from((sound - due.frame) / step - 1).unwrap_or(0);
-        self.due = Some(Due { frame: sound, shown: on_time });
-        (1 + skipped, u64::from(!due.shown) + skipped)
+        let passed = clock.passed(due.frame);
+        (passed, u64::from(!due.shown) + passed.saturating_sub(1))
     }
 
     fn seek(&mut self, p: &Playhead, start: f64, end: f64) -> Option<f64> {
@@ -132,8 +146,8 @@ impl FrameProbe {
         (last > first).then(|| (self.starts.len() - 1) as f64 / (last - first))
     }
 
-    pub fn start(&mut self, now: f64) {
-        self.open = Some(Open { t: now, first: None, logic: 0.0, draw: 0.0, upload: 0.0, consumed: false });
+    pub fn start(&mut self, now: impl FnOnce() -> f64) {
+        self.open = self.recording.is_some().then(|| Open { t: now(), first: None, logic: 0.0, draw: 0.0, upload: 0.0, consumed: false });
     }
 
     pub fn stamp(&self, now: impl FnOnce() -> f64) -> Option<f64> {
@@ -157,25 +171,18 @@ impl FrameProbe {
         }
     }
 
-    pub fn input_withdrawn(&mut self) {
-        if let Some(r) = &mut self.recording {
-            r.injected_at = None;
-        }
-    }
-
     pub fn input_consumed(&mut self) {
         if let Some(open) = &mut self.open {
             open.consumed = true;
         }
     }
 
-    pub fn finish(&mut self, now: impl FnOnce() -> f64, playhead: impl FnOnce() -> Playhead) {
-        let Some(open) = self.open.take() else { return };
-        while self.starts.front().is_some_and(|t| open.t - t > RATE_WINDOW_S) || self.starts.len() >= RATE_STARTS {
+    pub fn finish(&mut self, tick: f64, now: impl FnOnce() -> f64, playhead: impl FnOnce() -> Playhead) {
+        while self.starts.front().is_some_and(|t| tick - t > RATE_WINDOW_S) || self.starts.len() >= RATE_STARTS {
             self.starts.pop_front();
         }
-        self.starts.push_back(open.t);
-        let Some(r) = &mut self.recording else { return };
+        self.starts.push_back(tick);
+        let (Some(open), Some(r)) = (self.open.take(), &mut self.recording) else { return };
         let end = now();
         let p = playhead();
         let ms = |s: f64| s * 1000.0;
