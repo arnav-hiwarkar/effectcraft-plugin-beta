@@ -176,9 +176,11 @@ into textures, `ui_build` for every UI pass minus the uploads it nested; the sta
 and the C total is their sum); I, the interval between the hooks of drawn frames; L, from a
 control request queueing synthetic input to the end of the frame that applies the last of it
 (when its `AfterInput` reply goes out); and P, against the preview's clock (the audio clock with
-sound, else the preview's frame rate from where it last started or held): each comp frame the
-clock passes is late unless the viewer showed it while the clock was on it, a seek, restart or
-hold counts nothing for the jump, a loop wrap counts the frames to the end and from the start,
+sound, else the preview's frame rate from where it last started, which keeps running while the
+preview holds on a frame that is not rendered): each comp frame the clock passes is late unless
+the viewer showed it while the clock was on it, a seek, restart or audio start counts nothing for
+the jump, a loop wrap counts the frames to the end and from the start, any other step back counts
+nothing,
 and a seek
 runs from the start of the frame that moved the current time while paused to the end of the frame
 whose viewer shows that frame. It records only after `ui.set {"frameProbe": true}` (up to 131,072

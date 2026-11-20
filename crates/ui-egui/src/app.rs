@@ -15,6 +15,8 @@ mod screenshot;
 mod viewer_frames;
 mod window;
 
+#[cfg(test)]
+pub(crate) use frame::playhead;
 pub use gpu::{GPU_PREPARING, GpuBuild};
 #[cfg(test)]
 pub(crate) use screenshot::{MAX_PENDING_SHOTS, SCREENSHOT_SETTLE_PASSES, SCREENSHOT_SETTLE_S, SCREENSHOT_TIMEOUT_S};

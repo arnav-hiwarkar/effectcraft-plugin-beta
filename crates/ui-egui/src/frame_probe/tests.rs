@@ -145,7 +145,19 @@ fn a_seek_or_restart_starts_a_new_generation_and_counts_nothing_for_the_jump() {
 #[test]
 fn a_loop_wrap_counts_the_frames_to_the_end_and_from_the_start() {
     assert_eq!(counts([playing(8, 8), playing(1, 1)]), [(0, 0), (3, 2)]);
-    assert_eq!(counts([on(8, 8, 2, 10, 1), on(2, 2, 2, 10, 1)]), [(0, 0), (3, 2)]);
+    assert_eq!(counts([on(18, 18, 2, 20, 1), on(2, 2, 2, 20, 1)]), [(0, 0), (3, 2)]);
+}
+
+#[test]
+fn a_small_step_back_in_one_generation_counts_nothing_and_does_not_count_the_loop() {
+    assert_eq!(counts([on(100, 100, 1, 299, 1), on(99, 99, 1, 299, 1), on(100, 100, 1, 299, 1)]), [(0, 0), (0, 0), (1, 0)]);
+    assert_eq!(counts([on(297, 297, 1, 299, 1), on(2, 2, 1, 299, 1)]), [(0, 0), (5, 4)]);
+}
+
+#[test]
+fn stalled_frames_the_clock_passes_are_late() {
+    let stalled = (1..=5).map(|k| Playhead { shown: Some((7, 0)), ..playing(k, k) });
+    assert_eq!(counts(std::iter::once(playing(0, 0)).chain(stalled)), [(0, 0), (1, 0), (1, 1), (1, 1), (1, 1), (1, 1)]);
 }
 
 #[test]

@@ -2,8 +2,8 @@ use std::num::NonZeroU32;
 use std::path::Path;
 use std::process::Command;
 
-use craft_testkit::pair::frames::{self, Block, Heading, Identity, Opts, Probe, Run};
-use craft_testkit::pair::{self, Count, Gate, Ident, Workload};
+use craft_testkit::pair::frames::{self, Block, Identity, Opts, Output, Probe, Provenance, Run};
+use craft_testkit::pair::{Count, Gate, Ident, Workload};
 use serde_json::Value;
 
 const BENCH: &str = "frame_probe_bench";
@@ -12,8 +12,6 @@ const WORKLOADS: [&str; 2] = ["playback", "scrub"];
 const STAGES: [&str; 4] = ["input", "logic", "ui_build", "upload"];
 const MAX_LOAD_PER_CORE: f64 = 1.0;
 const FRAMEWORK: &str = "craft-ui";
-const RECORDS: &str = "pair.records";
-const SUMMARY: &str = "pair-summary.md";
 
 pub const HELP: &str = "usage: cargo xtask bench --pair [--workload playback|scrub]... [--units N] [--frames N] [--refresh-hz HZ]
                              [--night ID] [--runner-image ID] [--skip-build]
@@ -94,6 +92,10 @@ pub fn contended(load: Option<[f64; 3]>, cores: Option<usize>) -> bool {
     load.zip(cores).is_some_and(|([one, _, _], cores)| one > cores as f64 * MAX_LOAD_PER_CORE)
 }
 
+fn hosted_image() -> Option<String> {
+    Some(format!("{}-{}", std::env::var("ImageOS").ok()?, std::env::var("ImageVersion").ok()?))
+}
+
 fn identity(root: &Path, o: &Opts) -> Result<Identity, String> {
     let git = |args: &[&str]| {
         Command::new("git")
@@ -108,8 +110,11 @@ fn identity(root: &Path, o: &Opts) -> Result<Identity, String> {
     let commit = git(&["rev-parse", "HEAD"]);
     let dirty = git(&["status", "--porcelain", "--untracked-files=no"]).is_some_and(|s| !s.is_empty());
     let lock = std::fs::read_to_string(root.join("Cargo.lock")).map_err(|e| format!("read Cargo.lock: {e}"))?;
-    let run = format!("{now}-{}", std::process::id());
-    Identity::of(o, run, commit.as_deref(), dirty, framework_rev(&lock).as_deref(), &super::utc(now)).map_err(|e| e.to_string())
+    let framework = framework_rev(&lock);
+    let date = super::utc(now);
+    let provenance =
+        Provenance { run: format!("{now}-{}", std::process::id()), commit: commit.as_deref(), dirty, framework: framework.as_deref(), date: &date };
+    Identity::of(o, provenance).map_err(|e| e.to_string())
 }
 
 fn measure(exe: &Path, dir: &Path, root: &Path, o: &Opts, name: &str, block: Block) -> Result<(Value, Probe<4>), String> {
@@ -131,14 +136,12 @@ fn measure(exe: &Path, dir: &Path, root: &Path, o: &Opts, name: &str, block: Blo
 
 pub fn run(root: &Path, args: &[String]) -> Result<(), String> {
     let args: Vec<&str> = args.iter().map(String::as_str).filter(|a| *a != "--pair").collect();
-    let o = Opts::parse(&args, &WORKLOADS).map_err(|e| format!("bench --pair: {e}\n\n{HELP}"))?;
+    let o = Opts::parse(&args, &WORKLOADS, hosted_image().as_deref()).map_err(|e| format!("bench --pair: {e}\n\n{HELP}"))?;
     let cores = std::thread::available_parallelism().map(|n| n.get()).ok();
     let load = frames::load_label(contended(super::loadavg(), cores));
     let target = root.join("target").join("bench");
-    let dir = target.join("pair");
-    for stale in [target.join(RECORDS), target.join(SUMMARY), dir.clone()] {
-        frames::clear(&stale)?;
-    }
+    let out = Output::new(target.clone());
+    out.prepare()?;
     if !o.skip_build {
         eprintln!("bench --pair: building {BENCH} (--release) into {}", target.display());
         let status = Command::new(env!("CARGO"))
@@ -152,27 +155,12 @@ pub fn run(root: &Path, args: &[String]) -> Result<(), String> {
         }
     }
     let exe = target.join("release").join("examples").join(format!("{BENCH}{}", std::env::consts::EXE_SUFFIX));
-    std::fs::create_dir_all(&dir).map_err(|e| format!("create {}: {e}", dir.display()))?;
     let id = identity(root, &o)?;
-    let mut run = Run::default();
-    for block in frames::blocks(o.units) {
-        for name in &o.workloads {
-            let (context, probe) = measure(&exe, &dir, root, &o, name, block)?;
-            let workload = workload(name, &context, load)?;
-            run.add(&id, name, workload, block, &probe, &gates(name)).map_err(|e| e.to_string())?;
-        }
-    }
-    let all = run.records();
-    let records_path = target.join(RECORDS);
-    std::fs::write(&records_path, pair::print_records(&all)).map_err(|e| format!("{}: {e}", records_path.display()))?;
-    let shown = records_path.display().to_string();
-    let heading = Heading { id: &id, load, units: o.units, frames: o.frames, records: &shown };
-    let summary = run.summary(&heading, STAGES).map_err(|e| e.to_string())?;
-    let summary_path = target.join(SUMMARY);
-    std::fs::write(&summary_path, &summary).map_err(|e| format!("{}: {e}", summary_path.display()))?;
-    println!("\n{summary}");
-    println!("wrote {} ({} records)", records_path.display(), all.len());
-    Ok(())
+    let run = Run::drive(&o, &id, gates, |name, block| {
+        let (context, probe) = measure(&exe, &out.blocks(), root, &o, name, block)?;
+        Ok((workload(name, &context, load)?, probe))
+    })?;
+    run.write(&out, &id, load, &o, STAGES).map(drop)
 }
 
 #[cfg(test)]

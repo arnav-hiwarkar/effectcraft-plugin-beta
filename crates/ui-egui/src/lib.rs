@@ -234,13 +234,13 @@ pub struct Playback {
     /// When the silent clock last ran (seconds), for the pace.
     pub paced_at: Option<f64>,
     pub generation: u64,
+    pub held_from: Option<(f64, i64)>,
 }
 
 impl Playback {
     pub fn anchor(&mut self, now: f64, frame: i64) {
         self.start_wall = now;
         self.start_frame = frame;
-        self.generation = self.generation.wrapping_add(1);
     }
 
     /// A new frame went on screen at `now`.

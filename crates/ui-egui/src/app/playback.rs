@@ -50,6 +50,7 @@ impl EffectcraftApp {
             pace_acc: None,
             paced_at: None,
             generation: self.playback.generation.wrapping_add(1),
+            held_from: None,
         };
         if !self.playback.caching {
             if plan.video {
@@ -73,6 +74,7 @@ impl EffectcraftApp {
     pub(super) fn start_audio(&mut self, t: Tick) {
         self.audio = None;
         self.playback.generation = self.playback.generation.wrapping_add(1);
+        self.playback.held_from = None;
         self.meter.clipped = [false; 2];
         let (Some(pl), Some(cid)) = (self.playback.plan, self.session.active_comp_id()) else { return };
         let Some(c) = self.session.project.comp_arc(cid).filter(|_| self.audio_plays()) else { return };
