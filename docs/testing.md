@@ -175,13 +175,18 @@ the first stamped stage, `logic` for every `App::logic` tick, `upload` for putti
 into textures, `ui_build` for every UI pass minus the uploads it nested; the stages do not overlap
 and the C total is their sum); I, the interval between the hooks of drawn frames; L, from a
 control request queueing synthetic input to the end of the frame that applies the last of it
-(when its `AfterInput` reply goes out); and P, against the audio clock: each comp frame the
-preview's sound passes is late unless the viewer showed it while the sound was on it, and a seek
+(when its `AfterInput` reply goes out); and P, against the preview's clock (the audio clock with
+sound, else the preview's frame rate from where it last started or held): each comp frame the
+clock passes is late unless the viewer showed it while the clock was on it, a seek, restart or
+hold counts nothing for the jump, a loop wrap counts the frames to the end and from the start,
+and a seek
 runs from the start of the frame that moved the current time while paused to the end of the frame
 whose viewer shows that frame. It records only after `ui.set {"frameProbe": true}` (up to 131,072
 frames, the rest counted as dropped), `ui.perf.takeFrames` drains it, and `ui.inspect` reports
-only `{count, dropped}`. While off it keeps nothing and reads one clock a frame, the frame start
-that the Info panel's UI rate (`fps`) comes from.
+only `perf.frames: {count, dropped}`. While off it keeps nothing and reads no clock: the Info
+panel's UI rate (`fps`) comes from the time each frame's logic tick already read. `upload` covers
+CPU frames going into textures, GPU frames registered as textures and the display pass; egui's
+tessellation and eframe's paint run after the app returns, belong to no stage and show only in I.
 
 `cargo xtask bench --pair` builds the `frame_probe_bench` example in release into `target/bench`
 and runs it in `--units` ABBA units (3) of A and AA blocks of `--frames` frames (3600), each block

@@ -160,7 +160,7 @@ impl eframe::App for EffectcraftApp {
     /// starts a new undo step.
     fn raw_input_hook(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {
         if raw_input.viewport_id == egui::ViewportId::ROOT {
-            self.frame_probe.start(self.clock.now());
+            self.frame_probe.start(|| self.clock.now());
         }
         raw_input.events.append(&mut self.forwarded.events);
         raw_input.dropped_files.append(&mut self.forwarded.files);

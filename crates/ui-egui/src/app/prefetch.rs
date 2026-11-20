@@ -219,8 +219,7 @@ impl EffectcraftApp {
         self.playback.waiting = !all;
         if all {
             self.playback.caching = false;
-            self.playback.start_wall = now;
-            self.playback.start_frame = p.first;
+            self.playback.anchor(now, p.first);
             self.session.set_time(fr.tick_of(p.first));
             self.start_audio(fr.tick_of(p.first));
         }
@@ -301,8 +300,7 @@ impl EffectcraftApp {
             return false;
         }
         let Some(p) = plan else { return false };
-        self.playback.start_wall = now;
-        self.playback.start_frame = cur;
+        self.playback.anchor(now, cur);
         // `prefetch_playback` requests every uncached frame of offsets 0..window from here.
         let window = (ahead * 3).min(fit - 1);
         let need = self.frames.get(&FrameKey { frame: cur, ..series }).map(|img| startup_frames(ahead, window, self.frames.budget(), img.bytes()));
@@ -366,8 +364,7 @@ impl EffectcraftApp {
         let need = ahead.min(fit - 1).max(1);
         if (self.playback.keeps_up(now) && self.cached_ahead(&p, &series, cur, need)) || self.cached_ahead(&p, &series, cur, fit) {
             self.playback.audio_held = false;
-            self.playback.start_wall = now;
-            self.playback.start_frame = cur;
+            self.playback.anchor(now, cur);
             self.start_audio(fr.tick_of(cur));
         }
     }
@@ -469,8 +466,7 @@ impl EffectcraftApp {
             }
             if self.playback.pace_acc.take().is_some() {
                 // Back to real time from here.
-                self.playback.start_wall = now;
-                self.playback.start_frame = cur;
+                self.playback.anchor(now, cur);
             }
         }
         let elapsed = now - self.playback.start_wall;
@@ -505,8 +501,7 @@ impl EffectcraftApp {
             if self.frames.is_cached(&FrameKey { frame: next, ..series }) {
                 self.session.set_time(fr.tick_of(next));
             }
-            self.playback.start_wall = now;
-            self.playback.start_frame = fr.frame_at(self.session.time());
+            self.playback.anchor(now, fr.frame_at(self.session.time()));
         }
         ctx.request_repaint();
     }

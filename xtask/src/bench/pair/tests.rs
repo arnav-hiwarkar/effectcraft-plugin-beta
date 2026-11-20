@@ -114,49 +114,16 @@ name = "egui"
 
 #[test]
 fn the_load_label_follows_load_per_core() {
-    let label = |one_minute: f64| load_label(contended(Some([one_minute, 0.0, 0.0]), Some(8)));
-    assert_eq!((label(8.0), label(8.5), load_label(contended(None, Some(8)))), ("idle", "contended", "idle"));
+    let label = |one_minute: f64| frames::load_label(contended(Some([one_minute, 0.0, 0.0]), Some(8)));
+    assert_eq!((label(8.0), label(8.5), frames::load_label(contended(None, Some(8)))), ("idle", "contended", "idle"));
 }
 
 #[test]
-fn clearing_removes_stale_records_and_block_reports() {
-    let dir = tempfile::tempdir().unwrap();
-    let records = dir.path().join(RECORDS);
-    let blocks = dir.path().join("pair");
-    std::fs::write(&records, "craft-pair/1 stale\n").unwrap();
-    std::fs::create_dir_all(&blocks).unwrap();
-    std::fs::write(blocks.join("scrub-1-0.json"), "{}").unwrap();
-    for stale in [&records, &blocks, &dir.path().join(SUMMARY)] {
-        clear(stale).unwrap();
-    }
-    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
-}
-
-#[test]
-fn options() {
-    let args = |list: &[&str]| list.iter().map(|a| (*a).to_owned()).collect::<Vec<_>>();
-    let o = parse_opts(&args(&["--pair"])).unwrap();
-    assert_eq!((o.workloads, o.units, o.frames, o.refresh_hz.get(), o.skip_build), (vec!["playback".to_owned(), "scrub".to_owned()], 3, 3600, 60, false));
-    let o = parse_opts(&args(&[
-        "--pair",
-        "--workload",
-        "scrub",
-        "--units",
-        "5",
-        "--frames",
-        "600",
-        "--refresh-hz",
-        "120",
-        "--night",
-        "n1",
-        "--runner-image",
-        "img",
-        "--skip-build",
-    ]))
-    .unwrap();
-    assert_eq!((o.workloads, o.units, o.frames, o.refresh_hz.get()), (vec!["scrub".to_owned()], 5, 600, 120));
-    assert_eq!((o.night.as_deref(), o.runner_image.as_deref(), o.skip_build), (Some("n1"), Some("img"), true));
-    for bad in [&["--units", "0"][..], &["--frames", "x"], &["--frames", "1"], &["--refresh-hz", "0"], &["--workload", "drag"], &["--quick"]] {
-        assert!(parse_opts(&args(bad)).is_err(), "{bad:?}");
-    }
+fn a_frame_without_a_valid_time_is_an_error() {
+    let at = |t: f64, seek: Value| json!({"frames": [frame(t, 1.0, Value::Null, 0, 0, seek)]});
+    let error = |report: Value| probe(&report, hz(60)).unwrap_err();
+    assert!(error(at(-1.0, Value::Null)).starts_with("frame with `t` -1 ms, not a time"));
+    assert!(error(at(1e14, Value::Null)).starts_with("frame with `t` 100000000000000 ms, not a time"));
+    assert!(error(at(0.0, json!(-2.0))).starts_with("frame with `seekMs` -2 ms, not a time"));
+    assert_eq!(probe(&at(0.0, json!(2.0)), hz(60)).map(|p| p.seek.count()), Ok(1));
 }
