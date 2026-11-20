@@ -1,0 +1,50 @@
+name: Paired perf smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths: ['xtask/**', 'crates/ui-egui/**', 'Cargo.lock', '.github/workflows/pair-smoke.yml']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pair-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pair-smoke:
+    name: bench --pair end to end (A/AA records and verdict)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Linux build dependencies
+        uses: storytold/craft-common-actions/actions/install-apt-packages@main
+        with:
+          packages: >-
+            pkg-config libxkbcommon-dev libwayland-dev libx11-dev libxcb1-dev libxcursor-dev
+            libxrandr-dev libxi-dev libfontconfig1-dev libfreetype-dev mesa-vulkan-drivers
+            libgl1-mesa-dev libasound2-dev
+      - uses: step-security/dtolnay-rust-toolchain@8dd607977d06adf4ed49b190381e74c17a9dd25f # v1.0.0
+        with:
+          toolchain: stable
+      - uses: storytold/craft-common-actions/actions/rust-cache@main
+        with:
+          cache-version: v2
+          job: pair-smoke
+      - name: Paired run
+        run: cargo xtask bench --pair --units 2 --frames 120 --night "ci-${{ github.run_id }}" --runner-image ubuntu-24.04
+      - name: Upload records
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: pair-records
+          path: target/bench/pair*
+          if-no-files-found: error
