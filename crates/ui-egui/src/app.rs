@@ -44,10 +44,9 @@ impl EffectcraftApp {
             playback: Playback::default(),
             dialog: None,
             hooks: Hooks::default(),
-            fps: 60.0,
+            frame_probe: Default::default(),
             clock: AppClock::default(),
             now: 0.0,
-            last_time: 0.0,
             styled: false,
             fonts_ready: false,
             styled_language: "",
@@ -160,6 +159,9 @@ impl eframe::App for EffectcraftApp {
     /// a batch), then prepare pointer wrapping; ending a numeric scrub clears the history merge key so the next edit
     /// starts a new undo step.
     fn raw_input_hook(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {
+        if raw_input.viewport_id == egui::ViewportId::ROOT {
+            self.frame_probe.start(self.clock.now());
+        }
         raw_input.events.append(&mut self.forwarded.events);
         raw_input.dropped_files.append(&mut self.forwarded.files);
         let injected = self.synthetic_in_flight || !self.synthetic.is_empty();
@@ -181,9 +183,11 @@ impl eframe::App for EffectcraftApp {
     fn logic(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         // Never `ctx.input(|i| i.time)` here: `Context::run_logic` leaves events, pointer state and
         // time at the previous full pass's values (only the viewport information is refreshed).
+        let since = self.frame_probe.stamp(|| self.clock.now());
         self.tick(ctx, frame);
         self.finish_ime_logic(ctx);
         crate::panels::unsaved::quit_on_close(ctx);
+        self.frame_probe.add(crate::frame_probe::Stage::Logic, since, || self.clock.now());
     }
 
     /// Draw one UI pass through `draw`.

@@ -28,6 +28,7 @@ pub mod display_gpu;
 pub mod dock;
 pub mod dock_ui;
 mod expression_diagnostics;
+pub mod frame_probe;
 pub mod frames;
 pub mod gpu_failure;
 pub mod header;
@@ -349,11 +350,10 @@ pub struct EffectcraftApp {
     pub playback: Playback,
     pub dialog: Option<Dialog>,
     pub hooks: Hooks,
-    pub fps: f32,
+    pub frame_probe: frame_probe::FrameProbe,
     /// The app clock and the value it had at the last [`EffectcraftApp::tick`].
     clock: AppClock,
     now: f64,
-    last_time: f64,
     styled: bool,
     fonts_ready: bool,
     /// The interface language the fonts were installed for; `""` until the first frame.

@@ -14,6 +14,8 @@ use std::time::Instant;
 
 use serde_json::{Value, json};
 
+mod pair;
+
 const HELP: &str = "usage: cargo xtask bench [options]
 
 Renders generated scenarios with effectcraft-cli and records memory, CPU and wall time.
@@ -47,7 +49,9 @@ Scenarios: demo (the built-in demo comp), layers (1080p, 100 solid/text/shape la
 Blur, Glow, Levels, Curves, Drop Shadow and keyframes), precomps (static and animated precomps
 nested three deep, each used several times), footage (a generated PNG sequence and H.264 clip on
 several layers at 1080p, plus a 4K still). Each renders Full, Half and one frame (`frame`); `open`
-is the cost of loading the project alone.";
+is the cost of loading the project alone.
+
+`cargo xtask bench --pair` measures the app's frames in paired A/AA blocks instead (`--pair --help`).";
 
 // ---------------------------------------------------------------------------------------- options
 
@@ -111,9 +115,13 @@ fn parse_opts(args: &[String]) -> Result<Opts, String> {
 }
 
 pub fn run(root: &Path, args: &[String]) -> Result<(), String> {
+    let paired = args.iter().any(|a| a == "--pair");
     if args.iter().any(|a| matches!(a.as_str(), "-h" | "--help" | "help")) {
-        println!("{HELP}");
+        println!("{}", if paired { pair::HELP } else { HELP });
         return Ok(());
+    }
+    if paired {
+        return pair::run(root, args);
     }
     let o = parse_opts(args)?;
     if let (Some(old), Some(new)) = (&o.compare, &o.with) {

@@ -1553,6 +1553,11 @@ dependencies = [
 ]
 
 [[package]]
+name = "craft-testkit"
+version = "0.1.0"
+source = "git+https://github.com/arnav-hiwarkar/craft-libs-plugin-beta?rev=18b5a38df7a2bcc801191a91ff1ac217cad4c024#18b5a38df7a2bcc801191a91ff1ac217cad4c024"
+
+[[package]]
 name = "craft-tga"
 version = "0.1.0"
 source = "git+https://github.com/storytold/craft-libs?rev=82062077bba679ba5236e2d1a391f02d1533cbab#82062077bba679ba5236e2d1a391f02d1533cbab"
@@ -8700,6 +8705,7 @@ name = "xtask"
 version = "0.24.1"
 dependencies = [
  "chrono",
+ "craft-testkit",
  "pkg-config",
  "serde_json",
  "sha2",

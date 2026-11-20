@@ -74,6 +74,13 @@ fn lead_of(after: impl Fn(i64) -> Option<i64>, cached: &[i64], max: i64) -> (i64
     (ahead.iter().filter(|f| cached.binary_search(f).is_ok()).count() as i64, ahead.len() as i64)
 }
 
+/// The frame under the audible sample while the sound drives the preview, kept in the
+/// preview's range (`wa..=wb`) and on its frame step.
+pub(super) fn sound_frame(a: &crate::audio::AudioPlayback, fr: effectcraft_engine::time::FrameRate, wa: i64, wb: i64, step: i64) -> i64 {
+    let step = step.max(1);
+    wa + (fr.frame_at(a.clock_time()).clamp(wa, wb) - wa).div_euclid(step) * step
+}
+
 impl PlaybackPass<'_> {
     /// The frame `k` played frames after `from` (wrapping as the preview loops), `None` once a
     /// preview that doesn't loop has reached its end.
@@ -113,7 +120,7 @@ impl EffectcraftApp {
         // While the sound drives a video preview, frames are rendered and kept ahead of what it
         // plays rather than of the picture, which drops frames behind it when rendering can't
         // keep up (#2473).
-        let lead = if video { self.sound_frame(fr, wa, wb, plan.map_or(1, |p| p.step)).unwrap_or(cur) } else { cur };
+        let lead = if video { self.audio.as_ref().map_or(cur, |a| sound_frame(a, fr, wa, wb, plan.map_or(1, |p| p.step))) } else { cur };
         let ahead = self.prefetch_ahead(ctx, now);
         let queued = self.frames.inflight();
         let series = self.frame_series(cid, scale);
@@ -405,14 +412,6 @@ impl EffectcraftApp {
         }
         ctx.request_repaint();
         true
-    }
-
-    /// The frame under the audible sample while the sound drives the preview, kept in the
-    /// preview's range and on its frame step; `None` without sound.
-    fn sound_frame(&self, fr: effectcraft_engine::time::FrameRate, wa: i64, wb: i64, step: i64) -> Option<i64> {
-        let a = self.audio.as_ref()?;
-        let step = step.max(1);
-        Some(wa + (fr.frame_at(a.clock_time()).clamp(wa, wb) - wa).div_euclid(step) * step)
     }
 
     /// The last cached frame after the current one and before `target`, in play order: what a

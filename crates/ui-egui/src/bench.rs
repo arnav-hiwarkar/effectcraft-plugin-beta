@@ -30,9 +30,10 @@ impl Driver {
 
     pub fn step_with(&mut self, events: Vec<egui::Event>) -> f64 {
         self.time += 1.0 / 60.0;
-        let input =
+        let mut input =
             egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, self.size)), time: Some(self.time), events, ..Default::default() };
         let t0 = web_time::Instant::now();
+        eframe::App::raw_input_hook(&mut self.app, &self.ctx, &mut input);
         let (app, frame) = (&mut self.app, &mut self.frame);
         let mut out = self.ctx.run_ui(input, |ui| {
             eframe::App::logic(app, ui.ctx(), frame);

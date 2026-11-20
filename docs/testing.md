@@ -167,6 +167,49 @@ successful latest runs, and at least one comparable resource metric per run. Fai
 missing coverage, empty results and wall-time-only measurements cannot pass the gate. Omit
 `--fail-over` for an exploratory partial comparison; failed latest runs remain visible.
 
+### Paired frame runs (`cargo xtask bench --pair`)
+
+The frame probe (`crates/ui-egui/src/frame_probe.rs`) times what a user feels, frame by frame:
+C, the UI thread's wall time in each stage (`input` from the root viewport's `raw_input_hook` to
+the first stamped stage, `logic` for every `App::logic` tick, `upload` for putting viewer frames
+into textures, `ui_build` for every UI pass minus the uploads it nested; the stages do not overlap
+and the C total is their sum); I, the interval between the hooks of drawn frames; L, from a
+control request queueing synthetic input to the end of the frame that applies the last of it
+(when its `AfterInput` reply goes out); and P, against the audio clock: each comp frame the
+preview's sound passes is late unless the viewer showed it while the sound was on it, and a seek
+runs from the start of the frame that moved the current time while paused to the end of the frame
+whose viewer shows that frame. It records only after `ui.set {"frameProbe": true}` (up to 131,072
+frames, the rest counted as dropped), `ui.perf.takeFrames` drains it, and `ui.inspect` reports
+only `{count, dropped}`. While off it keeps nothing and reads one clock a frame, the frame start
+that the Info panel's UI rate (`fps`) comes from.
+
+`cargo xtask bench --pair` builds the `frame_probe_bench` example in release into `target/bench`
+and runs it in `--units` ABBA units (3) of A and AA blocks of `--frames` frames (3600), each block
+its own process: the same binary in both arms, the A/A calibration `CONF-calibrate`. Each run
+first deletes the previous records, summary and block reports. The frame series becomes
+`craft-pair/1` records through `craft_testkit::pair::frames`, shared with PhotoCraft:
+`OverheadCpu`, `OverheadInterval`, `UiEqMissed` (2 × I × hz > 3 s) and `UiEqLongStalls`
+(I × hz > 4 s and I > 50 ms) for both workloads, `PlaybackLate` for `playback`, `UiEqLatency` and
+`PlaybackSeek` for `scrub`. Records go to `target/bench/pair.records`, and the A/AA verdict per
+gate with each stage's p50/p95/p99 to `target/bench/pair-summary.md`. Records name the night
+(`--night`, default the UTC date), the runner image (`--runner-image`, default
+`$ImageOS-$ImageVersion` on a hosted runner, else `local`), the `craft-ui` revision as the
+framework, and the load: `contended` when the 1-minute load at the start is above one per core,
+else `idle`, so the two never pool.
+
+The harness has limits to keep in mind when reading its numbers:
+- Nothing is presented. The bench drives the real `EffectcraftApp` through `bench::Driver`
+  (hook, logic and UI passes as eframe runs them, no GPU, texture uploads dropped) and waits for
+  the next tick of a `--refresh-hz` grid (60) after each frame, so I is C rounded up to whole
+  display periods.
+- The project is a 1920×1080, 30 fps, 10 s comp with a moving solid and a generated 440 Hz WAV,
+  in a 1920×1080 window with the CPU compositor, so `backend` is `cpu`.
+- `playback` plays the comp with sound. The audio output is a stand-in that consumes samples at
+  48 kHz of wall time on its own thread, so the audio clock is real time without a device.
+- `scrub` sends one `ui.key` request at a time, `PageDown` (Next Frame, `Home` at the end), and
+  sends the next only after the previous one's reply and once the viewer shows the frame it moved
+  to. L includes the wait for the next grid tick.
+
 ## Unexpected desktop exit diagnostics
 
 The desktop starts a separate, lightweight reporter before loading fonts, projects or the GPU.
