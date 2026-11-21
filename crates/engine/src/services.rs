@@ -1,4 +1,4 @@
-use super::config;
+pub use craft_atomic::Durability;
 
 /// Host services (file access) injected by the frontend.
 pub trait Services: Send + Sync {
@@ -15,6 +15,9 @@ pub trait Services: Send + Sync {
         Ok(bytes)
     }
     fn write_file(&self, path: &str, data: &[u8]) -> std::io::Result<()>;
+    fn write_file_durability(&self, path: &str, data: &[u8]) -> std::io::Result<Durability> {
+        self.write_file(path, data).map(|()| Durability::NotMeasured)
+    }
     /// Whether a file exists (the background footage check after open).
     fn exists(&self, path: &str) -> bool {
         std::path::Path::new(path).exists()
@@ -97,7 +100,10 @@ impl Services for FsServices {
         Ok(bytes)
     }
     fn write_file(&self, path: &str, data: &[u8]) -> std::io::Result<()> {
-        config::atomic_write(std::path::Path::new(path), data)
+        craft_atomic::write(std::path::Path::new(path), data).visible()
+    }
+    fn write_file_durability(&self, path: &str, data: &[u8]) -> std::io::Result<Durability> {
+        craft_atomic::write(std::path::Path::new(path), data).published().map(Durability::of)
     }
 }
 

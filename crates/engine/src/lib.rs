@@ -74,7 +74,7 @@ pub use interchange::psd_import;
 pub use interchange::vector;
 pub use interchange::xml_project;
 use interchange::{keyframe_text, keyframe_text_effects};
-pub use render_queue::{ExportJob, ExportResult, Exporter, JobState};
+pub use render_queue::{ExportJob, ExportResult, Exporter, JobState, UnconfirmedFile};
 pub use settings::autosave;
 pub use settings::config;
 pub use settings::prefs;
@@ -98,7 +98,7 @@ pub use doc_state::{CompSelection, EditorState, KeyClip, KeyMove, KeyRef, LinkCl
 pub use error::{EngineError, Result};
 pub use event::Event;
 pub use fonts::{FontRow, font_features, font_menu, font_preview, font_styles, text_families};
-pub use services::{FsServices, Importer, Services};
+pub use services::{Durability, FsServices, Importer, Services};
 pub use session::upgrade_effects;
 
 pub struct Session {

@@ -272,7 +272,7 @@ pub(crate) struct Cx<'a> {
     pub frame_times: Option<Mutex<Vec<(u64, f64)>>>,
     /// Files written to an overflow folder.
     pub overflowed: Mutex<Vec<String>>,
-    written: Mutex<Vec<String>>,
+    pub(crate) outputs: out::Outputs<'a>,
 }
 
 /// A job's layer caches: its own, or those of the Render Queue run it belongs to.
@@ -365,7 +365,7 @@ impl<'a> Cx<'a> {
             cpu_frames: Mutex::new(None),
             frame_times,
             overflowed: Mutex::new(vec![]),
-            written: Mutex::new(vec![]),
+            outputs: out::Outputs::new(job.options.fs.unwrap_or(&craft_atomic::RealFs)),
         };
         if let Some(c) = cx.fixed_choice(std::env::var(RENDERER_ENV).ok().as_deref()) {
             cx.decide(c);
@@ -881,28 +881,12 @@ impl<'a> Cx<'a> {
         crate::fit(px, img.width, img.height, w, h)
     }
 
-    /// Open a file and remember ownership for cancellation cleanup (including overflow paths).
     pub fn create(&self, path: &str) -> crate::Result<out::Out<'_>> {
-        let file = out::create(self.sink, path)?;
-        if self.sink.is_none() {
-            self.written.lock().unwrap_or_else(std::sync::PoisonError::into_inner).push(path.to_owned());
-        }
-        Ok(file)
+        out::create(self.sink, &self.outputs, path)
     }
 
     pub fn remove_cancelled_outputs(&self) -> crate::Result<()> {
-        let mut failure = None;
-        for path in self.written.lock().unwrap_or_else(std::sync::PoisonError::into_inner).iter() {
-            if let Err(e) = std::fs::remove_file(path)
-                && e.kind() != std::io::ErrorKind::NotFound
-            {
-                failure.get_or_insert_with(|| crate::ExportError::Io(format!("cannot remove cancelled output {path}: {e}")));
-            }
-        }
-        match failure {
-            Some(error) => Err(error),
-            None => Ok(()),
-        }
+        self.outputs.remove_owned()
     }
 
     /// Whether Skip Existing finds `path` already written: at its own place or, with Use Storage
@@ -941,7 +925,7 @@ impl<'a> Cx<'a> {
     pub fn write_log(&self, result: &Result<crate::Report, crate::ExportError>, seconds: f64) -> Option<String> {
         let level = self.job.options.log;
         // Errors Only: a log for failures (a user stop is not an error).
-        if level == RenderLog::ErrorsOnly && matches!(result, Ok(_) | Err(crate::ExportError::Cancelled)) {
+        if level == RenderLog::ErrorsOnly && result.as_ref().err().is_none_or(crate::ExportError::is_cancelled) {
             return None;
         }
         let comp = self.comp();

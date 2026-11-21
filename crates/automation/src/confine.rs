@@ -608,6 +608,9 @@ impl Services for ConfinedServices {
     fn write_file(&self, path: &str, data: &[u8]) -> std::io::Result<()> {
         self.inner.write_file(path, data)
     }
+    fn write_file_durability(&self, path: &str, data: &[u8]) -> std::io::Result<effectcraft_engine::Durability> {
+        self.inner.write_file_durability(path, data)
+    }
     fn exists(&self, path: &str) -> bool {
         self.inside(path) && self.inner.exists(path)
     }

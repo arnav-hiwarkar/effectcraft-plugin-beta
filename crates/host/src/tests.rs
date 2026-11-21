@@ -659,3 +659,39 @@ fn renaming_a_model_a_text_expression_reads_changes_the_key_and_the_text() {
     assert_ne!(effectcraft_engine::render::disk_cache::comp_content_key(&s.project, cid), key, "the comp's frames on disk hold the old name");
     assert!(shown(&mut s).contains("table.glb"), "the text shows the new name: {}", shown(&mut s));
 }
+
+#[test]
+fn a_stopped_sequence_that_replaced_frames_reports_a_user_stop() {
+    use effectcraft_engine::Exporter;
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/test-out/host-rq-stop");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut s = super::session();
+    s.execute("file.openDemoProject", json!({})).unwrap();
+    let pattern = dir.join("seq_[###].png").to_string_lossy().into_owned();
+    s.execute("renderQueue.add", json!({"format": "png", "output": &pattern, "resolution": 0.0625, "timeSpan": "custom", "start": 0.0, "end": 0.2})).unwrap();
+    let first = effectcraft_engine::project::render_queue::sequence_path(&pattern, 0);
+    std::fs::write(&first, b"an older frame").unwrap();
+    let item = s.project.render_queue[0].clone();
+    let job = effectcraft_engine::ExportJob {
+        project: &s.project,
+        footage: &effectcraft_engine::render::NoFootage,
+        expr: None,
+        item: &item,
+        accel: None,
+        path: &pattern,
+        storage: None,
+        label: String::new(),
+        nested_switches: true,
+        caches: None,
+        renderer: None,
+        gpu_frames: None,
+        cache_budget: None,
+    };
+    let stopped = super::FileExporter::default().export(&job, &mut |done, _| done == 0);
+    assert_eq!(stopped.unwrap_err(), effectcraft_engine::render_queue::CANCELLED);
+    assert!(std::fs::read(&first).unwrap().starts_with(b"\x89PNG"), "the replaced frame holds the new complete frame");
+    let error = effectcraft_export::ExportError::Replaced { error: Box::new(effectcraft_export::ExportError::Cancelled), replaced: vec![first] };
+    assert!(error.is_cancelled());
+    assert!(!effectcraft_export::ExportError::Replaced { error: Box::new(effectcraft_export::ExportError::NoComp), replaced: vec![] }.is_cancelled());
+}

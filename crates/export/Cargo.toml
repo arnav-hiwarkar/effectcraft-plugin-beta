@@ -15,6 +15,7 @@ effectcraft-project = { workspace = true }
 effectcraft-raster = { workspace = true }
 effectcraft-render = { workspace = true }
 craft-video = { workspace = true }
+craft-atomic = { workspace = true }
 craft-audio = { workspace = true }
 craft-media = { workspace = true }
 craft-gif = { workspace = true }

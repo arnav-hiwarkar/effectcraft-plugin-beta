@@ -1196,6 +1196,17 @@ version = "0.1.0"
 source = "git+https://github.com/storytold/craft-libs?rev=5a7a63a21dd03dd1a2bc6c308a3a6ce818caae87#5a7a63a21dd03dd1a2bc6c308a3a6ce818caae87"
 
 [[package]]
+name = "craft-atomic"
+version = "0.1.0"
+source = "git+https://github.com/arnav-hiwarkar/craft-libs-plugin-beta?rev=7ac46cf4574d0d355ffe0c40d9a929b82883232b#7ac46cf4574d0d355ffe0c40d9a929b82883232b"
+dependencies = [
+ "exacl",
+ "log",
+ "rustix 1.1.5",
+ "winsafe",
+]
+
+[[package]]
 name = "craft-audio"
 version = "0.1.0"
 source = "git+https://github.com/storytold/craft-libs?rev=30596f73c5ef851ba3dad9cf145669f391e2eb0d#30596f73c5ef851ba3dad9cf145669f391e2eb0d"
@@ -2114,6 +2125,7 @@ name = "effectcraft-engine"
 version = "0.24.1"
 dependencies = [
  "chrono",
+ "craft-atomic",
  "craft-docpath",
  "effectcraft-aep",
  "effectcraft-color",
@@ -2153,6 +2165,7 @@ dependencies = [
 name = "effectcraft-export"
 version = "0.24.1"
 dependencies = [
+ "craft-atomic",
  "craft-audio 0.1.0 (git+https://github.com/storytold/craft-libs?rev=3dff4793f1a5bd1f99a4fe3280d48f515158dff3)",
  "craft-exr",
  "craft-gif",
@@ -2975,6 +2988,18 @@ checksum = "8be9f3dfaaffdae2972880079a491a1a8bb7cbed0b8dd7a347f668b4150a3b93"
 dependencies = [
  "event-listener",
  "pin-project-lite",
+]
+
+[[package]]
+name = "exacl"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8de9e551ced9d700a31dacb8b168129640240fcd7a279a3fa4d59608b84ebcae"
+dependencies = [
+ "bitflags 2.13.2",
+ "log",
+ "scopeguard",
+ "uuid",
 ]
 
 [[package]]

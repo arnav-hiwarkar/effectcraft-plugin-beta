@@ -38,7 +38,7 @@ pub fn store_peaks(file: &Path, peaks: &[[f32; 4]]) -> std::io::Result<()> {
             b.extend_from_slice(&v.to_le_bytes());
         }
     }
-    crate::config::atomic_write(file, &b)
+    craft_atomic::write(file, &b).visible()
 }
 
 #[cfg(test)]

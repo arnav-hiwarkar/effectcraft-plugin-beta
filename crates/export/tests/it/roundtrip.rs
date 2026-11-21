@@ -862,3 +862,145 @@ fn rendered_aiff_imports_back() {
         assert!(r < 0.01, "{name}: right RMS {r}");
     }
 }
+
+fn cancelled(
+    p: &Project,
+    cid: ItemId,
+    om: &OutputModule,
+    path: &str,
+    mut go_on: impl FnMut(&Progress) -> bool,
+) -> effectcraft_export::Result<effectcraft_export::Report> {
+    let s = settings();
+    let job = Job {
+        project: p,
+        footage: &NoFootage,
+        expr: None,
+        accel: None,
+        comp: cid,
+        settings: &s,
+        output: om,
+        path,
+        sink: None,
+        options: Default::default(),
+        nested_switches: true,
+    };
+    export(&job, &mut |progress: &Progress| go_on(progress))
+}
+
+fn listing(dir: &Path) -> Vec<String> {
+    let mut names: Vec<String> = std::fs::read_dir(dir).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
+    names.sort();
+    names
+}
+
+#[test]
+fn a_cancelled_movie_keeps_the_previous_file_and_leaves_no_stage() {
+    let d = out_dir("cancel-movie");
+    let (p, cid) = project(None);
+    let path = d.join("movie.mp4");
+    std::fs::write(&path, b"the previous movie").unwrap();
+    let r = cancelled(&p, cid, &OutputModule::for_format(OutputFormat::H264), &path.to_string_lossy(), |progress| progress.done < progress.total);
+    assert!(matches!(r, Err(effectcraft_export::ExportError::Cancelled)), "{r:?}");
+    assert_eq!(std::fs::read(&path).unwrap(), b"the previous movie");
+    assert_eq!(listing(&d), ["movie.mp4"]);
+}
+
+#[test]
+fn a_cancelled_sequence_removes_only_the_frames_it_created() {
+    let d = out_dir("cancel-owned");
+    let (p, cid) = project(None);
+    let pattern = d.join("c_[#####].png").to_string_lossy().to_string();
+    let replaced_frame = sequence_path(&pattern, 0);
+    std::fs::write(&replaced_frame, b"an older frame").unwrap();
+    std::fs::write(d.join("unrelated.txt"), b"keep").unwrap();
+    let r = cancelled(&p, cid, &OutputModule::for_format(OutputFormat::PngSequence), &pattern, |progress| progress.done == 0);
+    let Err(effectcraft_export::ExportError::Replaced { error, replaced }) = r else { panic!("{r:?}") };
+    assert!(matches!(*error, effectcraft_export::ExportError::Cancelled));
+    assert_eq!(replaced, std::slice::from_ref(&replaced_frame));
+    let frame = std::fs::read(&replaced_frame).unwrap();
+    assert!(frame.starts_with(b"\x89PNG"), "the replaced frame holds the new complete frame, not removed");
+    assert_eq!(listing(&d), [Path::new(&replaced_frame).file_name().unwrap().to_string_lossy().into_owned(), "unrelated.txt".to_owned()]);
+}
+
+struct FolderSyncFails;
+
+impl craft_atomic::AtomicFs for FolderSyncFails {
+    fn entry(&self, path: &Path) -> std::io::Result<craft_atomic::Entry> {
+        craft_atomic::RealFs.entry(path)
+    }
+    fn read_link(&self, path: &Path) -> std::io::Result<PathBuf> {
+        craft_atomic::RealFs.read_link(path)
+    }
+    fn open_read(&self, path: &Path) -> std::io::Result<std::fs::File> {
+        craft_atomic::RealFs.open_read(path)
+    }
+    fn open_write(&self, path: &Path) -> std::io::Result<std::fs::File> {
+        craft_atomic::RealFs.open_write(path)
+    }
+    fn create_new(&self, path: &Path, permissions: craft_atomic::NewFilePermissions) -> std::io::Result<std::fs::File> {
+        craft_atomic::RealFs.create_new(path, permissions)
+    }
+    fn sync(&self, file: &std::fs::File) -> std::io::Result<craft_atomic::Flush> {
+        if file.metadata()?.is_dir() { Err(std::io::Error::from_raw_os_error(5)) } else { craft_atomic::RealFs.sync(file) }
+    }
+    fn rename(&self, from: &Path, to: &Path) -> std::io::Result<()> {
+        craft_atomic::RealFs.rename(from, to)
+    }
+    fn replace_existing(&self, from: &Path, to: &Path) -> Result<(), craft_atomic::ReplaceFailure> {
+        craft_atomic::RealFs.replace_existing(from, to)
+    }
+    fn rename_noreplace(&self, from: &Path, to: &Path) -> std::io::Result<()> {
+        craft_atomic::RealFs.rename_noreplace(from, to)
+    }
+    fn hard_link(&self, from: &Path, to: &Path) -> std::io::Result<()> {
+        craft_atomic::RealFs.hard_link(from, to)
+    }
+    fn remove(&self, path: &Path) -> std::io::Result<()> {
+        craft_atomic::RealFs.remove(path)
+    }
+    fn open_dir(&self, dir: &Path) -> std::io::Result<std::fs::File> {
+        craft_atomic::RealFs.open_dir(dir)
+    }
+    fn copy_acl(&self, from: &Path, to: &Path) {
+        craft_atomic::RealFs.copy_acl(from, to);
+    }
+    fn set_permissions(&self, file: &std::fs::File, perms: std::fs::Permissions) -> std::io::Result<()> {
+        craft_atomic::RealFs.set_permissions(file, perms)
+    }
+    #[cfg(unix)]
+    fn set_group(&self, file: &std::fs::File, gid: u32) -> std::io::Result<()> {
+        craft_atomic::RealFs.set_group(file, gid)
+    }
+}
+
+#[test]
+fn every_file_whose_folder_flush_failed_is_reported() {
+    let d = out_dir("folder-sync");
+    let (p, cid) = project(None);
+    let s = settings();
+    for (om, path, files) in [
+        (OutputModule::for_format(OutputFormat::PngSequence), d.join("f_[#####].png").to_string_lossy().into_owned(), FRAMES as usize),
+        (OutputModule::for_format(OutputFormat::H264), d.join("m.mp4").to_string_lossy().into_owned(), 1),
+    ] {
+        let options = effectcraft_export::JobOptions { fs: Some(&FolderSyncFails), ..Default::default() };
+        let job = Job {
+            project: &p,
+            footage: &NoFootage,
+            expr: None,
+            accel: None,
+            comp: cid,
+            settings: &s,
+            output: &om,
+            path: &path,
+            sink: None,
+            options,
+            nested_switches: true,
+        };
+        let r = export(&job, &mut |_| true).unwrap();
+        assert_eq!(r.unconfirmed.len(), files, "{path}");
+        assert!(r.unconfirmed.iter().all(|u| u.reasons.ids() == ["dir-sync-failed"]), "{:?}", r.unconfirmed);
+        let r = run(&p, cid, &NoFootage, &om, Path::new(&path));
+        assert_eq!(r.unconfirmed, [], "{path}: the real file system confirms every flush here");
+    }
+    assert!(listing(&d).iter().all(|n| craft_atomic::temp_owner(n).is_none()));
+}
