@@ -862,3 +862,73 @@ fn rendered_aiff_imports_back() {
         assert!(r < 0.01, "{name}: right RMS {r}");
     }
 }
+
+fn cancelled(
+    p: &Project,
+    cid: ItemId,
+    om: &OutputModule,
+    path: &str,
+    mut go_on: impl FnMut(&Progress) -> bool,
+) -> effectcraft_export::Result<effectcraft_export::Report> {
+    let s = settings();
+    let job = Job {
+        project: p,
+        footage: &NoFootage,
+        expr: None,
+        accel: None,
+        comp: cid,
+        settings: &s,
+        output: om,
+        path,
+        sink: None,
+        options: Default::default(),
+        nested_switches: true,
+    };
+    export(&job, &mut |progress: &Progress| go_on(progress))
+}
+
+fn listing(dir: &Path) -> Vec<String> {
+    let mut names: Vec<String> = std::fs::read_dir(dir).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
+    names.sort();
+    names
+}
+
+#[test]
+fn a_cancelled_movie_keeps_the_previous_file_and_leaves_no_stage() {
+    let d = out_dir("cancel-movie");
+    let (p, cid) = project(None);
+    let path = d.join("movie.mp4");
+    std::fs::write(&path, b"the previous movie").unwrap();
+    let r = cancelled(&p, cid, &OutputModule::for_format(OutputFormat::H264), &path.to_string_lossy(), |progress| progress.done < progress.total);
+    assert!(matches!(r, Err(effectcraft_export::ExportError::Cancelled)), "{r:?}");
+    assert_eq!(std::fs::read(&path).unwrap(), b"the previous movie");
+    assert_eq!(listing(&d), ["movie.mp4"]);
+}
+
+#[test]
+fn a_cancelled_sequence_removes_only_the_frames_it_created() {
+    let d = out_dir("cancel-owned");
+    let (p, cid) = project(None);
+    let pattern = d.join("c_[#####].png").to_string_lossy().to_string();
+    let replaced = sequence_path(&pattern, 0);
+    std::fs::write(&replaced, b"an older frame").unwrap();
+    std::fs::write(d.join("unrelated.txt"), b"keep").unwrap();
+    let r = cancelled(&p, cid, &OutputModule::for_format(OutputFormat::PngSequence), &pattern, |progress| progress.done == 0);
+    assert!(matches!(r, Err(effectcraft_export::ExportError::Cancelled)), "{r:?}");
+    let frame = std::fs::read(&replaced).unwrap();
+    assert!(frame.starts_with(b"\x89PNG"), "the replaced frame holds the new complete frame, not removed");
+    assert_eq!(listing(&d), [Path::new(&replaced).file_name().unwrap().to_string_lossy().into_owned(), "unrelated.txt".to_owned()]);
+}
+
+#[test]
+fn a_finished_export_reports_every_file_durable() {
+    let d = out_dir("durable");
+    let (p, cid) = project(None);
+    let pattern = d.join("f_[#####].png");
+    let r = run(&p, cid, &NoFootage, &OutputModule::for_format(OutputFormat::PngSequence), &pattern);
+    assert_eq!(r.unconfirmed, []);
+    let movie = d.join("m.mp4");
+    let r = run(&p, cid, &NoFootage, &OutputModule::for_format(OutputFormat::H264), &movie);
+    assert_eq!(r.unconfirmed, []);
+    assert!(listing(&d).iter().all(|n| craft_atomic::temp_owner(n).is_none()));
+}

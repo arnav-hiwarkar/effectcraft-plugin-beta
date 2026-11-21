@@ -51,7 +51,7 @@ use effectcraft_render::{ExprHost, FootageSource};
 
 pub use effectcraft_project::render_queue;
 pub use effectcraft_project::render_queue::StorageQuota;
-pub use out::Sink;
+pub use out::{Sink, UnconfirmedOutput};
 pub(crate) use pipeline::Cx;
 pub use pipeline::{CACHE_BUDGET, GPU_INFLIGHT_MAX, RENDERER_ENV, auto_gpu_frames, pick_renderer};
 
@@ -187,6 +187,7 @@ pub struct Report {
     pub log: Option<String>,
     /// Files that went to an overflow folder.
     pub overflow: Vec<String>,
+    pub unconfirmed: Vec<UnconfirmedOutput>,
 }
 
 /// Formats this build can write (all of them; kept as the hook for optional encoders).
@@ -233,6 +234,7 @@ pub async fn export_async(job: &Job<'_>, progress: &mut dyn FnMut(&Progress) -> 
     if let Ok(rep) = &mut r {
         rep.log = log;
         rep.overflow = cx.overflowed.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        rep.unconfirmed = cx.outputs.unconfirmed();
     }
     r
 }
@@ -346,7 +348,18 @@ async fn sequence(cx: &Cx<'_>, comp: &Comp, w: u32, h: u32, st: &mut State<'_>) 
         st.advance(end - i)?;
         i = end;
     }
-    Ok(Report { path: sequence_path(cx.path, f0), frames: 0, width: w, height: h, seconds: 0.0, bytes, audio: false, log: None, overflow: vec![] })
+    Ok(Report {
+        path: sequence_path(cx.path, f0),
+        frames: 0,
+        width: w,
+        height: h,
+        seconds: 0.0,
+        bytes,
+        audio: false,
+        log: None,
+        overflow: vec![],
+        unconfirmed: vec![],
+    })
 }
 
 struct StillOutput {
@@ -466,7 +479,7 @@ async fn gif_export(job: &Cx<'_>, comp: &Comp, w: u32, h: u32, st: &mut State<'_
     }
     let _ = enc.finish().map_err(|e| ExportError::Encode(e.to_string()))?;
     let bytes = file.finish()?;
-    Ok(Report { path, frames: 0, width: w, height: h, seconds: 0.0, bytes, audio: false, log: None, overflow: vec![] })
+    Ok(Report { path, frames: 0, width: w, height: h, seconds: 0.0, bytes, audio: false, log: None, overflow: vec![], unconfirmed: vec![] })
 }
 
 fn validate_gif_dimensions(w: u32, h: u32) -> Result<()> {

@@ -5,7 +5,11 @@ use std::sync::Arc;
 
 use serde_json::json;
 
-use crate::config::{ConfigStore, DirConfig, MemoryConfig, atomic_write, atomic_write_with};
+use crate::config::{ConfigStore, DirConfig, MemoryConfig};
+
+fn atomic_write(path: &std::path::Path, data: &[u8]) -> std::io::Result<()> {
+    craft_atomic::write(path, data).visible()
+}
 use crate::prefs::{PREFS_FILE, Prefs};
 use crate::shortcuts::{DEFAULT_PRESET, Keymaps, normalize};
 use crate::{Session, autosave};
@@ -842,19 +846,21 @@ fn atomic_write_overwrites_a_long_valid_filename() {
 }
 
 #[test]
-fn concurrent_atomic_writes_each_publish_a_whole_file() {
+fn concurrent_atomic_writes_publish_one_whole_file_and_refuse_the_rest() {
     // Writers of the same file used to share one `.tmp`: they truncated each other's data and
     // the later rename failed once the first had moved it away (#1233).
     let d = tmp("atomic-concurrent");
     let f = d.join("shared.ecproj");
     for round in 0..10 {
         let contents: Vec<Vec<u8>> = (0..8u8).map(|w| vec![b'a' + w; 256 * 1024 + usize::from(w) * 1000]).collect();
-        std::thread::scope(|sc| {
-            for c in &contents {
-                let f = &f;
-                sc.spawn(move || atomic_write(f, c).expect("every writer succeeds"));
-            }
+        let results: Vec<std::io::Result<()>> = std::thread::scope(|sc| {
+            let writers: Vec<_> = contents.iter().map(|c| sc.spawn(|| atomic_write(&f, c))).collect();
+            writers.into_iter().map(|w| w.join().unwrap()).collect()
         });
+        assert!(results.iter().any(Result::is_ok), "round {round}: one writer publishes");
+        for error in results.iter().filter_map(|r| r.as_ref().err()) {
+            assert!(error.to_string().contains("another program replaced the file"), "round {round}: {error}");
+        }
         let got = std::fs::read(&f).unwrap();
         assert!(contents.contains(&got), "round {round}: the file is one writer's whole data ({} bytes)", got.len());
         assert_eq!(names(&d), ["shared.ecproj"], "round {round}: no temporary file is left");
@@ -1093,11 +1099,11 @@ fn atomic_write_survives_a_crash_mid_write() {
     let f = d.join("p.ecproj");
     atomic_write(&f, b"version 1").unwrap();
     // The writer dies halfway through the temporary file.
-    let r = atomic_write_with(&f, b"version 2 is much longer", |tmp, data| {
-        std::io::Write::write_all(tmp, &data[..5])?;
+    let r = craft_atomic::WriteOptions::default().write_with(&f, |tmp| {
+        std::io::Write::write_all(tmp, b"versi")?;
         Err(std::io::Error::other("power cut"))
     });
-    assert!(r.is_err());
+    assert!(r.visible().is_err());
     assert_eq!(std::fs::read(&f).unwrap(), b"version 1");
     assert_eq!(names(&d), ["p.ecproj"], "the partial temp file is cleaned up");
     // A temp file left by a hard kill doesn't count as an auto-save.

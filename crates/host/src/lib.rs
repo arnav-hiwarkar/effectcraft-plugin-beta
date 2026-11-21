@@ -84,6 +84,7 @@ impl Exporter for FileExporter {
                     audio: r.audio,
                     log: r.log,
                     overflow: r.overflow,
+                    unconfirmed: r.unconfirmed.into_iter().map(|u| effectcraft_engine::UnconfirmedFile { path: u.path, reason: u.reason.id() }).collect(),
                 }),
                 Err(effectcraft_export::ExportError::Cancelled) => Err(effectcraft_engine::render_queue::CANCELLED.into()),
                 Err(e) => Err(e.to_string()),

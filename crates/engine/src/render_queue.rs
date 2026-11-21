@@ -99,6 +99,13 @@ pub struct ExportResult {
     /// Files that went to storage overflow folders.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub overflow: Vec<String>,
+    pub unconfirmed: Vec<UnconfirmedFile>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+pub struct UnconfirmedFile {
+    pub path: String,
+    pub reason: &'static str,
 }
 
 /// Encodes render queue items (implemented by the export layer).

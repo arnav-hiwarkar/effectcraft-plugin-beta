@@ -1,5 +1,3 @@
-use super::config;
-
 /// Host services (file access) injected by the frontend.
 pub trait Services: Send + Sync {
     fn read_file(&self, path: &str) -> std::io::Result<Vec<u8>>;
@@ -97,7 +95,7 @@ impl Services for FsServices {
         Ok(bytes)
     }
     fn write_file(&self, path: &str, data: &[u8]) -> std::io::Result<()> {
-        config::atomic_write(std::path::Path::new(path), data)
+        craft_atomic::write(std::path::Path::new(path), data).visible()
     }
 }
 
