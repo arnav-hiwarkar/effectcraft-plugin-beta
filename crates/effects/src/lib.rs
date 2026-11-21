@@ -91,6 +91,7 @@ pub use distort3::{RESHAPE_POINTS, ReshapeSetup, SmearSetup, cc_smear_pad, resha
 pub use distort4::liquify_mesh;
 use effectcraft_keyframe::Value;
 use effectcraft_project::build::Ids;
+pub use effectcraft_project::{Cover, Declared, EffectInputs, EffectRole, Routes, TimeReach};
 use effectcraft_project::{GroupKind, ParamUi, PropGroup, Property};
 pub use effectcraft_raster::{AuxChannels, Image};
 pub use misc::{
@@ -452,13 +453,6 @@ pub fn adjustment_crop(offset: [f64; 2], canvas_offset: [f64; 2], size: (u32, u3
     Some((dx as i64, dy as i64))
 }
 
-/// Effects that grow their own buffer by what they need (blur and glow margins, Repeat Edge
-/// Pixels through [`Buf::cover`], displacement through [`cover_pad`]): a stack of only these
-/// skips the renderer's cover of the whole layer rectangle (#1205).
-/// Drop Shadow also pads by its distance and softness on both CPU and GPU: covering the
-/// layer rectangle first only inflates working images on highly scaled text and shapes (#3357).
-pub const SKIPS_COVER: &[&str] = &["ec.blur.gaussian", "ec.blur.fastbox", "ec.stylize.glow", "ec.distort.turbulentdisplace", "ec.perspective.dropshadow"];
-
 /// The grid phase [`Buf::align`] keeps and the step [`cover_pad`] grows in: covers the levels
 /// of the resampling pyramid used for downscaled layers.
 pub const GRID_ALIGN: u32 = 64;
@@ -659,19 +653,9 @@ pub struct EffectSpec {
     pub category: &'static str,
     pub params: Vec<ParamSpec>,
     pub render: RenderFn,
-    /// Implemented on the GPU path too (shown with a badge).
-    pub gpu: bool,
+    pub declared: Declared,
     /// Supports 32 bpc float (badge).
     pub float: bool,
-}
-
-impl EffectSpec {
-    /// True when this effect grows its own buffer (blur/glow margins, Repeat Edge
-    /// [`Buf::cover`], displacement [`cover_pad`]) so a stack of only these can skip the
-    /// renderer's full-layer cover and keep the pyramid grid phase (#1205).
-    pub fn skips_cover(&self) -> bool {
-        SKIPS_COVER.contains(&self.id)
-    }
 }
 
 pub(crate) fn p(id: &'static str, name: &'static str, default: Value, ui: ParamUi) -> ParamSpec {
@@ -749,11 +733,6 @@ pub fn registry() -> &'static [EffectSpec] {
         v.extend(roto::specs());
         v.extend(object_matte::specs());
         v.sort_by(|a, b| a.category.cmp(b.category).then(a.name.cmp(b.name)));
-        for s in v.iter_mut() {
-            if GPU_EFFECTS.contains(&s.id) {
-                s.gpu = true;
-            }
-        }
         v
     })
 }
@@ -761,6 +740,10 @@ pub fn registry() -> &'static [EffectSpec] {
 /// A built-in effect or a registered plug-in by id.
 pub fn find(id: &str) -> Option<&'static EffectSpec> {
     registry().iter().find(|s| s.id == id).or_else(|| plugin::plugins().into_iter().find(|s| s.id == id))
+}
+
+pub fn declared(id: &str) -> Option<Declared> {
+    find(id).map(|s| s.declared)
 }
 
 /// Every effect: the built-ins ([`registry`]) and the registered plug-ins
@@ -1159,379 +1142,6 @@ fn nested_group<'a>(g: &'a mut PropGroup, ids: &mut Ids, path: &str) -> Option<&
     }
 }
 
-/// Effects the GPU compositor (`effectcraft-gpu`) implements with the CPU effect's semantics
-/// (GPU Acceleration; the Effects & Presets GPU badge). Expression controls are
-/// pass-throughs and count as GPU effects too.
-pub const GPU_EFFECTS: &[&str] = &[
-    "ec.blur.gaussian",
-    "ec.blur.fastbox",
-    "ec.blur.directional",
-    "ec.stylize.glow",
-    "ec.color.levels",
-    "ec.color.curves",
-    "ec.color.huesaturation",
-    "ec.color.tint",
-    "ec.generate.fill",
-    "ec.generate.gradientramp",
-    "ec.noise.fractal",
-    "ec.perspective.dropshadow",
-    "ec.color.brightnesscontrast",
-    "ec.color.exposure",
-    "ec.channel.invert",
-    "ec.distort.transform",
-    "ec.distort.turbulentdisplace",
-    "ec.distort.displacementmap",
-    "ec.distort.wavewarp",
-    "ec.distort.ripple",
-    "ec.distort.twirl",
-    "ec.distort.bulge",
-    "ec.distort.cclens",
-    "ec.distort.meshwarp",
-    "ec.stylize.mosaic",
-    "ec.stylize.findedges",
-    "ec.stylize.emboss",
-    // Blur, transition and generate family (effectcraft-gpu `fx_generate`).
-    "ec.blur.radial",
-    "ec.blur.cameralens",
-    "ec.blur.ccradialfast",
-    "ec.transition.venetian",
-    "ec.transition.linearwipe",
-    "ec.transition.radialwipe",
-    "ec.transition.gradientwipe",
-    "ec.generate.cellpattern",
-    "ec.generate.checkerboard",
-    "ec.generate.grid",
-    "ec.generate.fourcolor",
-    "ec.noise.noise",
-    "ec.noise.addgrain",
-    // effectcraft-gpu fx_color
-    "ec.color.colorbalance",
-    "ec.color.vibrance",
-    "ec.color.lumetri",
-    "ec.color.blackwhite",
-    "ec.color.tritone",
-    "ec.color.colorama",
-    "ec.color.channelmixer",
-    "ec.color.selectivecolor",
-    "ec.key.linearcolor",
-    "ec.keying.keylight",
-    // effectcraft-gpu fx_key (keying, matte, channel)
-    "ec.key.colorkey",
-    "ec.key.luma",
-    "ec.key.colorrange",
-    "ec.key.extract",
-    "ec.key.differencematte",
-    "ec.key.colordifference",
-    "ec.key.screen",
-    "ec.key.spill",
-    "ec.key.advancedspill",
-    "ec.key.keycleaner",
-    "ec.key.unmult",
-    "ec.matte.simplechoker",
-    "ec.matte.mattechoker",
-    "ec.matte.refinesoft",
-    "ec.matte.refinehard",
-    "ec.channel.setmatte",
-    "ec.channel.setchannels",
-    "ec.channel.shiftchannels",
-    "ec.channel.removecolormatting",
-    "ec.channel.arithmetic",
-    "ec.channel.solidcomposite",
-    "ec.channel.combiner",
-    "ec.channel.blend",
-    "ec.channel.calculations",
-    "ec.channel.compoundarithmetic",
-    // effectcraft-gpu fx_tone (colour correction)
-    "ec.color.levelsic",
-    "ec.color.gammapedestalgain",
-    "ec.color.photofilter",
-    "ec.color.changecolor",
-    "ec.color.changetocolor",
-    "ec.color.leavecolor",
-    "ec.color.broadcast",
-    "ec.color.colorbalancehls",
-    "ec.color.videolimiter",
-    "ec.color.psarbitrarymap",
-    "ec.color.cctoner",
-    "ec.color.cccoloroffset",
-    "ec.color.cckernel",
-    "ec.color.autolevels",
-    "ec.color.autocontrast",
-    "ec.color.autocolor",
-    "ec.color.equalize",
-    "ec.color.shadowhighlight",
-    "ec.color.cccolorneutralizer",
-    "ec.color.colorstabilizer",
-    // effectcraft-gpu fx_stylize (stylize, distort)
-    "ec.stylize.posterize",
-    "ec.stylize.threshold",
-    "ec.stylize.ccthreshold",
-    "ec.stylize.ccthresholdrgb",
-    "ec.stylize.strobe",
-    "ec.stylize.ccvignette",
-    "ec.stylize.scatter",
-    "ec.stylize.brushstrokes",
-    "ec.stylize.roughenedges",
-    "ec.stylize.texturize",
-    "ec.stylize.motiontile",
-    "ec.stylize.cckaleida",
-    "ec.stylize.ccrepetile",
-    "ec.distort.mirror",
-    "ec.distort.offset",
-    "ec.distort.polar",
-    "ec.distort.spherize",
-    "ec.distort.cornerpin",
-    "ec.distort.opticscompensation",
-    "ec.distort.magnify",
-    "ec.distort.ccslant",
-    "ec.distort.ccsmear",
-    "ec.distort.ccsplit",
-    "ec.distort.ccsplit2",
-    "ec.distort.cctiler",
-    "ec.distort.ccgriddler",
-    "ec.distort.liquify",
-    "ec.distort.twirllegacy",
-    "ec.distort.ccripplepulse",
-    "ec.distort.ccpowerpin",
-    "ec.distort.ccflomotion",
-    // effectcraft-gpu fx_noise (noise, blur, time)
-    "ec.noise.turbulent",
-    "ec.noise.median",
-    "ec.noise.medianlegacy",
-    "ec.noise.dustscratches",
-    "ec.noise.removegrain",
-    "ec.noise.noisealpha",
-    "ec.noise.noisehls",
-    "ec.noise.noisehlsauto",
-    "ec.blur.smart",
-    "ec.blur.bilateral",
-    "ec.blur.sharpen",
-    "ec.blur.unsharp",
-    "ec.blur.compound",
-    "ec.blur.channel",
-    "ec.channel.minimax",
-    "ec.time.echo",
-    "ec.time.posterizetime",
-    // effectcraft-gpu fx_warp (warps, cartoon)
-    "ec.distort.warp",
-    "ec.distort.bezierwarp",
-    "ec.distort.ccbendit",
-    "ec.distort.ccpageturn",
-    "ec.distort.smear",
-    "ec.distort.reshape",
-    "ec.stylize.coloremboss",
-    "ec.stylize.cartoon",
-    // effectcraft-gpu fx_extra (shapes, bevels)
-    "ec.generate.circle",
-    "ec.generate.ellipse",
-    "ec.transition.iriswipe",
-    "ec.perspective.bevelalpha",
-    "ec.perspective.beveledges",
-    "ec.obsolete.gaussianlegacy",
-    // GPU effects, part B: 3D Channel.
-    "ec.3d.channelextract",
-    "ec.3d.cryptomatte",
-    "ec.3d.depthmatte",
-    "ec.3d.depthoffield",
-    "ec.3d.extractor",
-    "ec.3d.fog3d",
-    "ec.3d.idmatte",
-    "ec.3d.identifier",
-    // Colour management.
-    "ec.utility.applylut",
-    "ec.color.ociocdl",
-    "ec.color.ociocolorspace",
-    "ec.color.ociodisplay",
-    "ec.color.ociofile",
-    "ec.color.ociolook",
-    "ec.utility.colorprofileconverter",
-    // Immersive Video.
-    "ec.vr.blur",
-    "ec.vr.chromaticaberrations",
-    "ec.vr.colorgradients",
-    "ec.vr.converter",
-    "ec.vr.denoise",
-    "ec.vr.digitalglitch",
-    "ec.vr.fractalnoise",
-    "ec.vr.glow",
-    "ec.vr.planetosphere",
-    "ec.vr.rotatesphere",
-    "ec.vr.sharpen",
-    "ec.vr.spheretoplane",
-    // Simulation render passes.
-    "ec.sim.ccrainfall",
-    "ec.sim.ccsnowfall",
-    "ec.sim.ccstarburst",
-    "ec.sim.ccbubbles",
-    "ec.sim.ccdrizzle",
-    "ec.sim.cchair",
-    "ec.sim.ccmrmercury",
-    "ec.sim.caustics",
-    "ec.sim.waveworld",
-    "ec.sim.foam",
-    "ec.sim.shatter",
-    "ec.sim.carddance",
-    "ec.transition.cardwipe",
-    // effectcraft-gpu fx_particles (particle render passes)
-    "ec.sim.ccparticleworld",
-    "ec.sim.ccparticlesystems2",
-    "ec.sim.particleplayground",
-    "ec.sim.ccballaction",
-    "ec.sim.ccpixelpolly",
-    "ec.sim.ccscatterize",
-    "ec.noise.curlnoise",
-    // effectcraft-gpu fx_light (the CC light family)
-    "ec.generate.cclightrays",
-    "ec.generate.cclightburst",
-    "ec.generate.cclightsweep",
-    "ec.transition.cclightwipe",
-    // effectcraft-gpu fx_transition (transitions, perspective)
-    "ec.transition.blockdissolve",
-    "ec.transition.ccglasswipe",
-    "ec.transition.ccgridwipe",
-    "ec.transition.ccimagewipe",
-    "ec.transition.ccjaws",
-    "ec.transition.cclinesweep",
-    "ec.transition.ccradialscalewipe",
-    "ec.transition.ccscalewipe",
-    "ec.transition.cctwister",
-    "ec.transition.ccwarpomatic",
-    "ec.perspective.radialshadow",
-    "ec.distort.ccbender",
-    "ec.distort.ccblobbylize",
-    "ec.perspective.cccylinder",
-    "ec.perspective.ccsphere",
-    "ec.perspective.ccspotlight",
-    "ec.perspective.ccenvironment",
-    "ec.perspective.3dglasses",
-    // effectcraft-gpu fx_text (glyph coverage rasterised on the CPU)
-    "ec.text.numbers",
-    "ec.text.timecode",
-    // effectcraft-gpu fx_time (frames fetched by the host, combined on the GPU)
-    "ec.time.timedifference",
-    "ec.time.timedisplacement",
-    "ec.time.ccforcemotionblur",
-    "ec.time.ccwidetime",
-    "ec.time.pixelmotionblur",
-    "ec.time.timewarp",
-    // effectcraft-gpu fx_pixel2 (pixel ports, part C)
-    "ec.blur.cccross",
-    "ec.blur.ccradial",
-    "ec.blur.ccvector",
-    "ec.blur.reduceflicker",
-    "ec.channel.cccomposite",
-    "ec.color.colorlink",
-    "ec.utility.cineon",
-    "ec.utility.hdrcompander",
-    "ec.utility.hdrcompression",
-    "ec.utility.growbounds",
-    "ec.utility.ccoverbrights",
-    "ec.stylize.ccblockload",
-    "ec.stylize.ccburnfilm",
-    "ec.stylize.ccglass",
-    "ec.stylize.cchextile",
-    "ec.stylize.ccmrsmoothie",
-    "ec.stylize.ccplastic",
-    "ec.key.innerouter",
-    "ec.key.ccsimplewireremoval",
-    "ec.obsolete.basic3d",
-    // effectcraft-gpu fx_gen2 (generators, part C: CPU plans rasterised on the GPU)
-    "ec.obsolete.lightning",
-    "ec.generate.advancedlightning",
-    "ec.generate.beam",
-    "ec.generate.lensflare",
-    "ec.generate.radiowaves",
-    "ec.generate.vegas",
-    "ec.generate.stroke",
-    "ec.generate.scribble",
-    "ec.generate.writeon",
-    "ec.generate.paintbucket",
-    "ec.generate.eyedropperfill",
-    "ec.generate.ccgluegun",
-    "ec.generate.ccthreads",
-    "ec.generate.audiospectrum",
-    "ec.generate.audiowaveform",
-    "ec.obsolete.basictext",
-    "ec.obsolete.pathtext",
-];
-
-/// Effects that can read [`EffectHost::comp_scene`] (the comp camera or the first comp light):
-/// their output changes when the camera, the lights or the layer's own transform move, so the
-/// renderer's layer cache folds the comp scene into the key for these.
-pub const READS_COMP_SCENE: &[&str] = &["ec.sim.carddance", "ec.sim.shatter", "ec.transition.cardwipe", "ec.sim.caustics", "ec.sim.ccparticleworld"];
-
-/// Effects whose output depends on [`EffectCtx::time`] directly (not only through animated
-/// parameters). The renderer's layer cache folds the layer time into the key for these.
-/// The `time_dependence_is_declared` test checks the list against every registered effect.
-pub const TIME_DEPENDENT: &[&str] = &[
-    "ec.distort.wavewarp",
-    "ec.distort.ripple",
-    "ec.generate.radiowaves",
-    "ec.stylize.scatter",
-    "ec.stylize.strobe",
-    "ec.noise.noise",
-    "ec.noise.addgrain",
-    // Remove Grain's temporal filtering reads neighbouring frames.
-    "ec.noise.removegrain",
-    "ec.noise.noisealpha",
-    "ec.noise.noisehlsauto",
-    "ec.obsolete.lightning",
-    "ec.text.timecode",
-    "ec.text.numbers",
-    // The audio visualisers read the Audio Layer's samples around the frame time.
-    "ec.generate.audiospectrum",
-    "ec.generate.audiowaveform",
-    // Path Text's jitter changes every frame.
-    "ec.obsolete.pathtext",
-    // Time effects read neighbouring frames of the layer.
-    "ec.time.echo",
-    "ec.time.posterizetime",
-    "ec.time.timedifference",
-    "ec.time.timedisplacement",
-    "ec.time.timewarp",
-    "ec.time.ccforcemotionblur",
-    "ec.time.ccwidetime",
-    "ec.time.pixelmotionblur",
-    // Refine mattes' Reduce Chatter / motion blur read neighbouring frames.
-    "ec.matte.refinesoft",
-    "ec.matte.refinehard",
-    // Card Wipe's position / rotation jitter moves with time.
-    "ec.transition.cardwipe",
-    // Transform's motion blur and Radio Waves' birth parameters read the parameters at
-    // other times.
-    "ec.distort.transform",
-    // Temporal Smoothing reads neighbouring frames.
-    "ec.color.autolevels",
-    "ec.color.autocontrast",
-    "ec.color.autocolor",
-    "ec.color.shadowhighlight",
-    "ec.vr.digitalglitch",
-    "ec.blur.camerashakedeblur",
-    "ec.distort.rollingshutterrepair",
-    "ec.obsolete.mochashape",
-    // Each frame gets its own stabilizing warp.
-    warp_stab::ID,
-    // Render Track Points draws each frame's solved points.
-    camera_tracker::ID,
-    // Each frame has its own segmentation.
-    roto::ID,
-    object_matte::ID,
-];
-
-/// See [`TIME_DEPENDENT`].
-pub fn is_time_dependent(id: &str) -> bool {
-    // Simulations replay from layer time 0, so every frame differs even when the defaults
-    // happen to look static at the test's two sample times.
-    id.starts_with("ec.sim.") || TIME_DEPENDENT.contains(&id) || (!id.starts_with("ec.") && plugin::reads_other_times(id))
-}
-
-/// Does effect `id` read its own parameters at earlier times (the stepped particle systems sample
-/// their Birth Rate at every step, #1373)? Caches keyed on the current values can't see what an
-/// expression returned then.
-pub fn reads_param_history(id: &str) -> bool {
-    matches!(id, "ec.sim.ccparticleworld" | "ec.sim.ccparticlesystems2" | "ec.sim.ccmrmercury")
-}
-
 /// Run an effect on a buffer.
 pub fn apply(spec: &EffectSpec, ctx: &EffectCtx, buf: Buf) -> Buf {
     (spec.render)(ctx, buf)
@@ -1728,9 +1338,9 @@ mod tests {
         }
     }
 
-    /// Effects that read the clock must be listed in `TIME_DEPENDENT`, or the layer cache would
+    /// Effects that read the clock must declare a [`TimeReach`] that reads it, or the layer cache would
     /// serve stale pixels. Render every effect at two times with default parameters (plus
-    /// "random…" switches turned on) and require identical output from unlisted ones.
+    /// "random…" switches turned on) and require identical output from the others.
     #[test]
     fn time_dependence_is_declared() {
         let mut img = Image::new(40, 30);
@@ -1753,11 +1363,11 @@ mod tests {
                 apply(s, &ctx, Buf { img: img.clone(), offset: [0.0, 0.0], scale: 1.0 }).img
             };
             let (a, b) = (run(0.0), run(1.37));
-            if a != b && !is_time_dependent(s.id) {
+            if a != b && !s.declared.time.reads_clock() {
                 missing.push(s.id);
             }
         }
-        assert!(missing.is_empty(), "these depend on time but are not in TIME_DEPENDENT: {missing:?}");
+        assert!(missing.is_empty(), "these depend on time but do not declare reading the clock: {missing:?}");
     }
 
     /// A host that tags the returned pixels with the requested mode (R = 0 source, 0.5 masks,
@@ -1813,13 +1423,5 @@ mod tests {
         assert_eq!((dx, dy), (50, 30));
         assert_eq!(align_plan(offset, scale, size, 80, 40), Some((50, 30)));
         assert_eq!(align_plan([-64.0, -128.0], 1.0, size, 80, 40), None);
-    }
-
-    #[test]
-    fn known_margin_effects_skip_cover_and_twirl_does_not() {
-        for id in SKIPS_COVER {
-            assert!(find(id).expect(id).skips_cover(), "{id}");
-        }
-        assert!(!find("ec.distort.twirl").unwrap().skips_cover());
     }
 }

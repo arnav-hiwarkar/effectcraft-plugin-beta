@@ -27,7 +27,7 @@ use effectcraft_track::camtrack::{CameraSolve, CameraTracks, ShotType, SolveMeth
 use rayon::prelude::*;
 
 use crate::warp_stab::param;
-use crate::{Buf, EffectCtx, EffectSpec, Params, num, p, popup, slider};
+use crate::{Buf, Declared, EffectCtx, EffectSpec, Params, TimeReach, num, p, popup, slider};
 
 /// The effect's id.
 pub const ID: &str = "ec.perspective.cameratracker";
@@ -76,7 +76,7 @@ pub fn specs() -> Vec<EffectSpec> {
             p(CAMERA, "Camera Layer", num(0.0), ParamUi::Hidden),
         ],
         render,
-        gpu: false,
+        declared: Declared::CPU.time(TimeReach::Clock),
         float: true,
     }]
 }

@@ -8,10 +8,10 @@ use effectcraft_raster::gaussian_blur;
 use rayon::prelude::*;
 
 use crate::util::{Plane, dist_to_poly, gauss_plane, layer_or_self, lerp4, morph_frac, point_in_poly, premul, smoothstep, unpremul};
-use crate::{Buf, EffectCtx, EffectSpec, num, p, popup, slider};
+use crate::{Buf, Declared, EffectCtx, EffectSpec, TimeReach, num, p, popup, slider};
 
-fn spec(id: &'static str, name: &'static str, params: Vec<crate::ParamSpec>, render: crate::RenderFn) -> EffectSpec {
-    EffectSpec { id, name, category: "Keying", params, render, gpu: false, float: true }
+fn spec(id: &'static str, name: &'static str, declared: Declared, params: Vec<crate::ParamSpec>, render: crate::RenderFn) -> EffectSpec {
+    EffectSpec { id, name, category: "Keying", params, render, declared, float: true }
 }
 
 fn pct() -> ParamUi {
@@ -406,6 +406,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.key.differencematte",
             "Difference Matte",
+            Declared::GPU,
             vec![
                 p("view", "View", Value::Enum(0), popup(&["Final Output", "Source Only", "Matte Only"])),
                 p("differenceLayer", "Difference Layer", Value::Layer(None), ParamUi::Layer),
@@ -419,6 +420,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.key.innerouter",
             "Inner/Outer Key",
+            Declared::GPU,
             {
                 let leak = |s: String| -> &'static str { Box::leak(s.into_boxed_str()) };
                 let mut v = vec![p("foreground", "Foreground (Inside)", Value::Enum(0), mask_options())];
@@ -452,6 +454,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.key.unmult",
             "Unmult",
+            Declared::GPU,
             vec![
                 p("backgroundColor", "Background Color", Value::Enum(0), popup(&["Black", "White"])),
                 p("blackLevel", "Black Level", num(0.0), pct()),
@@ -465,6 +468,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.key.ccsimplewireremoval",
             "Line Removal",
+            Declared::GPU.time(TimeReach::OtherFrames),
             vec![
                 p("pointA", "Point A", Value::Vec2([0.25, 0.25]), ParamUi::Point),
                 p("pointB", "Point B", Value::Vec2([0.75, 0.75]), ParamUi::Point),

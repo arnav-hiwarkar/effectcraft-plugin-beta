@@ -456,8 +456,7 @@ impl effectcraft_effects::plugin::PluginHost for Host {
 fn abi_v2_receives_neighbour_frames_and_times() {
     load_wasm(neighbour_module("org.test.neighbours").as_bytes(), "neighbours.wat").unwrap();
     let p = effectcraft_effects::plugin::plugin("org.test.neighbours").unwrap();
-    assert!(effectcraft_effects::plugin::reads_other_times("org.test.neighbours"));
-    assert!(effectcraft_effects::is_time_dependent("org.test.neighbours"));
+    assert_eq!(effectcraft_effects::declared("org.test.neighbours").map(|d| d.time), Some(effectcraft_effects::TimeReach::History));
     // The module has no parameters, so the flattened vector is empty.
     let params = effectcraft_effects::plugin::PluginParams { manifest: p.manifest(), flat: &[], texts: &[] };
     let mut px = vec![[0.0f32; 4]; 2];
@@ -482,7 +481,6 @@ fn abi_v2_without_a_host_gets_zeroed_neighbours() {
     assert_eq!((spec.render)(&ctx, buf).img.get(0, 0), [0.0, 0.0, 0.0, 1.0]);
     // ABI 1 plug-ins keep the time-independent behaviour.
     let gain = load_wasm(gain_module("org.test.neighbours.v1", "").as_bytes(), "v1.wat").unwrap();
-    assert!(!effectcraft_effects::plugin::reads_other_times("org.test.neighbours.v1"));
-    assert!(!effectcraft_effects::is_time_dependent("org.test.neighbours.v1"));
+    assert_eq!(effectcraft_effects::declared("org.test.neighbours.v1").map(|d| d.time), Some(effectcraft_effects::TimeReach::OtherFrames));
     assert!(gain.id.starts_with("org.test."));
 }

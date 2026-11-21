@@ -19,7 +19,7 @@
 //! scene and composite it through the 2D path here too; environment backgrounds (Classic and
 //! Advanced 3D) draw their sky in a kernel (`Renderer::sky_draw`).
 //!
-//! GPU effects ([`effectcraft_effects::GPU_EFFECTS`]) run as compute kernels with the CPU
+//! GPU effects (those whose [`effectcraft_effects::Declared`] routes include the GPU) run as compute kernels with the CPU
 //! effect's exact steps (padding, box-blur radii, parameter conversions); chains of them are
 //! uploaded and read back once. Each family lives in its own module with its own WGSL file
 //! (`fx_color`, `fx_depth`, `fx_distort`, `fx_extra`, `fx_gen2`, `fx_generate`, `fx_key`,

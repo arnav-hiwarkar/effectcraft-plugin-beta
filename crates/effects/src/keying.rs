@@ -10,10 +10,17 @@ use rayon::prelude::*;
 
 use crate::color_fx::luma_601;
 use crate::util::{Plane, gauss_plane, morph_frac, premul, unpremul};
-use crate::{Buf, EffectCtx, EffectSpec, col, num, p, popup, slider};
+use crate::{Buf, Declared, EffectCtx, EffectSpec, col, num, p, popup, slider};
 
-fn spec(id: &'static str, name: &'static str, category: &'static str, params: Vec<crate::ParamSpec>, render: crate::RenderFn) -> EffectSpec {
-    EffectSpec { id, name, category, params, render, gpu: false, float: true }
+fn spec(
+    id: &'static str,
+    name: &'static str,
+    declared: Declared,
+    category: &'static str,
+    params: Vec<crate::ParamSpec>,
+    render: crate::RenderFn,
+) -> EffectSpec {
+    EffectSpec { id, name, category, params, render, declared, float: true }
 }
 
 fn pct() -> ParamUi {
@@ -547,6 +554,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.key.linearcolor",
             "Linear Color Key",
+            Declared::GPU,
             "Keying",
             vec![
                 p("view", "View", Value::Enum(0), view_popup()),
@@ -561,6 +569,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.key.colorkey",
             "Color Key",
+            Declared::GPU,
             "Obsolete",
             vec![
                 p("keyColor", "Key Color", col(0.0, 0.0, 1.0), ParamUi::Color),
@@ -573,6 +582,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.key.luma",
             "Luma Key",
+            Declared::GPU,
             "Obsolete",
             vec![
                 p("keyType", "Key Type", Value::Enum(1), popup(&["Key Out Brighter", "Key Out Darker", "Key Out Similar", "Key Out Dissimilar"])),
@@ -586,6 +596,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.key.colordifference",
             "Color Difference Key",
+            Declared::GPU,
             "Keying",
             vec![
                 p("view", "View", Value::Enum(7), popup(&COLOR_DIFF_VIEWS)),
@@ -610,6 +621,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.key.colorrange",
             "Color Range",
+            Declared::GPU,
             "Keying",
             vec![
                 p("fuzziness", "Fuzziness", num(0.0), b255()),
@@ -626,6 +638,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.key.extract",
             "Extract",
+            Declared::GPU,
             "Keying",
             vec![
                 p("channel", "Channel", Value::Enum(0), popup(&["Luminance", "Red", "Green", "Blue", "Alpha"])),
@@ -640,6 +653,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.key.screen",
             "Screen Key",
+            Declared::GPU,
             "Keying",
             vec![
                 p("view", "View", Value::Enum(0), popup(&["Final Result", "Screen Matte", "Status", "Source"])),
@@ -659,6 +673,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.key.spill",
             "Spill Suppressor",
+            Declared::GPU,
             "Obsolete",
             vec![
                 p("colorToSuppress", "Color To Suppress", col(0.0, 0.0, 1.0), ParamUi::Color),
@@ -670,6 +685,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.key.advancedspill",
             "Advanced Spill Suppressor",
+            Declared::GPU,
             "Keying",
             vec![
                 p("method", "Method", Value::Enum(0), popup(&["Standard", "Ultra"])),
@@ -686,6 +702,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.key.keycleaner",
             "Key Cleaner",
+            Declared::GPU,
             "Keying",
             vec![
                 p("additionalEdgeRadius", "Additional Edge Radius", num(3.0), slider(0.0, 100.0, 0.0, 20.0, 1)),

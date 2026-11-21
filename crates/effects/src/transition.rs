@@ -11,10 +11,10 @@ use rayon::prelude::*;
 
 use crate::sim2::{Piece, PiecePlan, PieceTex, rot_axis, sort_far_first};
 use crate::util::{Plane, gauss_plane, hash1, layer_rect, remap, unpremul};
-use crate::{Buf, EffectCtx, EffectSpec, ParamSpec, col, num, p, popup, slider};
+use crate::{Buf, Declared, EffectCtx, EffectInputs, EffectSpec, ParamSpec, TimeReach, col, num, p, popup, slider};
 
-fn spec(id: &'static str, name: &'static str, params: Vec<ParamSpec>, render: crate::RenderFn) -> EffectSpec {
-    EffectSpec { id, name, category: "Transition", params, render, gpu: false, float: true }
+fn spec(id: &'static str, name: &'static str, declared: Declared, params: Vec<ParamSpec>, render: crate::RenderFn) -> EffectSpec {
+    EffectSpec { id, name, category: "Transition", params, render, declared, float: true }
 }
 
 fn completion(ctx: &EffectCtx) -> f64 {
@@ -506,6 +506,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.transition.blockdissolve",
             "Block Dissolve",
+            Declared::GPU,
             vec![
                 done(),
                 p("blockWidth", "Block Width", num(1.0), slider(1.0, 4000.0, 1.0, 100.0, 1)),
@@ -518,6 +519,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.transition.gradientwipe",
             "Gradient Wipe",
+            Declared::GPU,
             vec![
                 done(),
                 p("softness", "Transition Softness", num(0.0), slider(0.0, 100.0, 0.0, 100.0, 0)),
@@ -530,6 +532,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.transition.iriswipe",
             "Iris Wipe",
+            Declared::GPU,
             vec![
                 p("center", "Iris Center", pt(0.5, 0.5), ParamUi::Point),
                 p("points", "Iris Points", num(6.0), slider(6.0, 32.0, 6.0, 32.0, 0)),
@@ -544,6 +547,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.transition.cardwipe",
             "Card Wipe",
+            Declared::GPU.time(TimeReach::Clock).inputs(EffectInputs::CompScene),
             vec![
                 done(),
                 p("transitionWidth", "Transition Width", num(50.0), slider(1.0, 100.0, 1.0, 100.0, 0)),
@@ -596,6 +600,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.transition.ccgridwipe",
             "Grid Wipe",
+            Declared::GPU,
             vec![
                 cc_done(),
                 p("center", "Center", pt(0.5, 0.5), ParamUi::Point),
@@ -610,12 +615,14 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.transition.ccradialscalewipe",
             "Radial Scale Wipe",
+            Declared::GPU,
             vec![cc_done(), p("center", "Center", pt(0.5, 0.5), ParamUi::Point), p("reverse", "Reverse Transition", Value::Bool(false), ParamUi::Checkbox)],
             radial_scale_wipe,
         ),
         spec(
             "ec.transition.ccscalewipe",
             "Scale Wipe",
+            Declared::GPU,
             vec![
                 p("stretch", "Stretch", num(0.0), slider(0.0, 1000.0, 0.0, 50.0, 2)),
                 p("center", "Center", pt(0.5, 0.5), ParamUi::Point),
@@ -626,6 +633,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.transition.cclightwipe",
             "Light Wipe",
+            Declared::GPU,
             vec![
                 cc_done(),
                 p("center", "Center", pt(0.5, 0.5), ParamUi::Point),

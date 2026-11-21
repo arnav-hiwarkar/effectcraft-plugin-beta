@@ -8,10 +8,10 @@ use effectcraft_project::ParamUi;
 use rayon::prelude::*;
 
 use crate::util::{Plane, gauss_plane, layer_rect, lerp, premul, smoothstep, unpremul};
-use crate::{Buf, EffectCtx, EffectSpec, col, num, p, popup, slider};
+use crate::{Buf, Declared, EffectCtx, EffectSpec, col, num, p, popup, slider};
 
-fn spec(id: &'static str, name: &'static str, params: Vec<crate::ParamSpec>, render: crate::RenderFn) -> EffectSpec {
-    EffectSpec { id, name, category: "Color Correction", params, render, gpu: false, float: true }
+fn spec(id: &'static str, name: &'static str, declared: Declared, params: Vec<crate::ParamSpec>, render: crate::RenderFn) -> EffectSpec {
+    EffectSpec { id, name, category: "Color Correction", params, render, declared, float: true }
 }
 
 fn pct() -> ParamUi {
@@ -807,6 +807,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.color.changecolor",
             "Change Color",
+            Declared::GPU,
             vec![
                 p("view", "View", Value::Enum(0), popup(&["Corrected Layer", "Color Correction Mask"])),
                 p("hueTransform", "Hue Transform", num(0.0), slider(-1800.0, 1800.0, -180.0, 180.0, 1)),
@@ -823,6 +824,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.color.videolimiter",
             "Video Limiter",
+            Declared::GPU,
             vec![
                 p("clipLevel", "Clip Level", Value::Enum(2), popup(&["90%", "95%", "100%", "105%", "109%"])),
                 p("clipMethod", "Clip Method", Value::Enum(2), popup(&["Luma", "Chroma", "Smart Limit"])),
@@ -835,6 +837,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.color.cccolorneutralizer",
             "Color Neutralizer",
+            Declared::GPU,
             vec![
                 p("shadowsUnbalance", "Shadows Unbalance", col(0.0, 0.0, 0.0), ParamUi::Color),
                 p("shadowsBalance", "Shadows Balance", col(0.0, 0.0, 0.0), ParamUi::Color),
@@ -853,6 +856,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.color.psarbitrarymap",
             "PS Arbitrary Map",
+            Declared::GPU,
             vec![
                 p("phase", "Phase", num(0.0), slider(-1000.0, 1000.0, 0.0, 255.0, 0)),
                 p("applyPhaseMapToAlpha", "Apply Phase Map To Alpha", Value::Bool(false), ParamUi::Checkbox),
@@ -860,7 +864,7 @@ pub fn specs() -> Vec<EffectSpec> {
             ],
             arbitrary_map,
         ),
-        spec("ec.color.lumetri", "Color Grading", lum, lumetri),
+        spec("ec.color.lumetri", "Color Grading", Declared::GPU, lum, lumetri),
     ]
 }
 

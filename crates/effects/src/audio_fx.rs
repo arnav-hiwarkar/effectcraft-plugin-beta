@@ -24,10 +24,10 @@ use std::f64::consts::PI;
 use effectcraft_keyframe::Value;
 use effectcraft_project::ParamUi;
 
-use crate::{Buf, EffectCtx, EffectSpec, Params, num, p, popup, slider};
+use crate::{Buf, Declared, EffectCtx, EffectSpec, Params, num, p, popup, slider};
 
-fn spec(id: &'static str, name: &'static str, params: Vec<crate::ParamSpec>) -> EffectSpec {
-    EffectSpec { id, name, category: "Audio", params, render: passthrough, gpu: false, float: true }
+fn spec(id: &'static str, name: &'static str, declared: Declared, params: Vec<crate::ParamSpec>) -> EffectSpec {
+    EffectSpec { id, name, category: "Audio", params, render: passthrough, declared, float: true }
 }
 
 fn passthrough(_: &EffectCtx, b: Buf) -> Buf {
@@ -59,10 +59,11 @@ pub fn specs() -> Vec<EffectSpec> {
         eq.push(p(b[6], b[7], num(0.0), slider(-24.0, 24.0, -24.0, 24.0, 2)));
     }
     vec![
-        spec("ec.audio.backwards", "Backwards", vec![p("swapChannels", "Swap Channels", Value::Bool(false), ParamUi::Checkbox)]),
+        spec("ec.audio.backwards", "Backwards", Declared::AUDIO, vec![p("swapChannels", "Swap Channels", Value::Bool(false), ParamUi::Checkbox)]),
         spec(
             "ec.audio.basstreble",
             "Bass & Treble",
+            Declared::AUDIO,
             vec![
                 p("bass", "Bass", num(0.0), slider(-100.0, 100.0, -100.0, 100.0, 2)),
                 p("treble", "Treble", num(0.0), slider(-100.0, 100.0, -100.0, 100.0, 2)),
@@ -71,6 +72,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.audio.compressor",
             "Compressor",
+            Declared::AUDIO,
             vec![
                 p("threshold", "Threshold (dB)", num(-16.0), slider(-60.0, 0.0, -60.0, 0.0, 2)),
                 p("ratio", "Ratio (x:1)", num(3.0), slider(0.4, 30.0, 0.4, 30.0, 2)),
@@ -85,6 +87,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.audio.delay",
             "Delay",
+            Declared::AUDIO,
             vec![
                 p("delayTime", "Delay Time (milliseconds)", num(500.0), slider(1.0, 10000.0, 1.0, 2000.0, 2)),
                 pp("delayAmount", "Delay Amount", pct(50.0)),
@@ -96,6 +99,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.audio.distortion",
             "Distortion",
+            Declared::AUDIO,
             vec![
                 p("distortionType", "Type", Value::Enum(0), popup(&DISTORTION_TYPES)),
                 pp("drive", "Drive", pct(25.0)),
@@ -109,6 +113,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.audio.flangechorus",
             "Flange & Chorus",
+            Declared::AUDIO,
             vec![
                 p("voiceSeparationTime", "Voice Separation Time (ms)", num(3.0), slider(0.0, 100.0, 0.0, 50.0, 2)),
                 p("voices", "Voices", num(1.0), slider(1.0, 8.0, 1.0, 8.0, 0)),
@@ -124,6 +129,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.audio.gate",
             "Gate",
+            Declared::AUDIO,
             vec![
                 p("threshold", "Threshold (dB)", num(-60.0), slider(-60.0, 0.0, -60.0, 0.0, 2)),
                 p("attack", "Attack (ms)", num(10.0), slider(0.0, 1000.0, 0.0, 1000.0, 2)),
@@ -134,6 +140,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.audio.highlowpass",
             "High-Low Pass",
+            Declared::AUDIO,
             vec![
                 p("filterOptions", "Filter Options", Value::Enum(0), popup(&["High Pass", "Low Pass"])),
                 p("cutoffFrequency", "Cutoff Frequency", num(2000.0), slider(20.0, 20000.0, 20.0, 20000.0, 1)),
@@ -144,6 +151,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.audio.modulator",
             "Modulator",
+            Declared::AUDIO,
             vec![
                 p("modulationType", "Modulation Type", Value::Enum(0), popup(&["Sine", "Triangle"])),
                 p("modulationRate", "Modulation Rate", num(10.0), slider(0.0, 100.0, 0.0, 20.0, 2)),
@@ -151,10 +159,11 @@ pub fn specs() -> Vec<EffectSpec> {
                 pp("amplitudeModulation", "Amplitude Modulation", pct(0.0)),
             ],
         ),
-        spec("ec.audio.parametriceq", "Parametric EQ", eq),
+        spec("ec.audio.parametriceq", "Parametric EQ", Declared::AUDIO, eq),
         spec(
             "ec.audio.reverb",
             "Reverb",
+            Declared::AUDIO,
             vec![
                 p("reverbTime", "Reverb Time (milliseconds)", num(100.0), slider(1.0, 5000.0, 1.0, 1000.0, 2)),
                 pp("diffusion", "Diffusion", pct(75.0)),
@@ -167,6 +176,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.audio.stereomixer",
             "Stereo Mixer",
+            Declared::AUDIO,
             vec![
                 p("leftLevel", "Left Level", num(100.0), slider(0.0, 400.0, 0.0, 200.0, 2)),
                 p("rightLevel", "Right Level", num(100.0), slider(0.0, 400.0, 0.0, 200.0, 2)),
@@ -178,6 +188,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.audio.tone",
             "Tone",
+            Declared::AUDIO,
             vec![
                 p("waveformOptions", "Waveform Options", Value::Enum(0), popup(&["Sine", "Triangle", "Saw", "Square", "White Noise"])),
                 p("frequency1", "Frequency 1", num(440.0), slider(0.0, 22000.0, 0.0, 2000.0, 2)),
@@ -189,11 +200,6 @@ pub fn specs() -> Vec<EffectSpec> {
             ],
         ),
     ]
-}
-
-/// Is `id` an audio effect (applied by the mixdown rather than the compositor)?
-pub fn is_audio_effect(id: &str) -> bool {
-    effectcraft_project::is_audio_effect(id)
 }
 
 /// Does the effect produce sound on its own (so a layer without audio becomes audible)?
@@ -785,7 +791,7 @@ mod tests {
         ] {
             let s = crate::find(id).unwrap_or_else(|| panic!("{id}"));
             assert_eq!(s.category, "Audio");
-            assert!(is_audio_effect(id));
+            assert_eq!(s.declared.role, crate::EffectRole::Audio);
         }
     }
 

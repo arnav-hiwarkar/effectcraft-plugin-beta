@@ -21,12 +21,12 @@ use rayon::prelude::*;
 
 use crate::generate::value_noise;
 use crate::util::{hash1, unpremul};
-use crate::{Buf, EffectCtx, EffectSpec, col, num, p, popup, slider};
+use crate::{Buf, Declared, EffectCtx, EffectSpec, TimeReach, col, num, p, popup, slider};
 
 type V3 = [f64; 3];
 
-fn spec(id: &'static str, name: &'static str, params: Vec<crate::ParamSpec>, render: crate::RenderFn) -> EffectSpec {
-    EffectSpec { id, name, category: "Immersive Video", params, render, gpu: false, float: true }
+fn spec(id: &'static str, name: &'static str, declared: Declared, params: Vec<crate::ParamSpec>, render: crate::RenderFn) -> EffectSpec {
+    EffectSpec { id, name, category: "Immersive Video", params, render, declared, float: true }
 }
 
 pub const FRAME_LAYOUTS: [&str; 3] = ["Monoscopic", "Stereo - Over/Under", "Stereo - Side by Side"];
@@ -991,10 +991,17 @@ pub fn specs() -> Vec<EffectSpec> {
     grad.push(p("opacity", "Opacity", v, u));
     grad.push(p("blendingMode", "Blending Mode", Value::Enum(0), popup(&BLEND_OPTS)));
     vec![
-        spec("ec.vr.blur", "VR Blur", vec![layout_param(), p("blurriness", "Blurriness", num(10.0), slider(0.0, 1000.0, 0.0, 100.0, 1))], vr_blur),
+        spec(
+            "ec.vr.blur",
+            "VR Blur",
+            Declared::GPU,
+            vec![layout_param(), p("blurriness", "Blurriness", num(10.0), slider(0.0, 1000.0, 0.0, 100.0, 1))],
+            vr_blur,
+        ),
         spec(
             "ec.vr.chromaticaberrations",
             "VR Chromatic Aberrations",
+            Declared::GPU,
             vec![
                 layout_param(),
                 ang("centerTilt", "Center Tilt"),
@@ -1007,10 +1014,11 @@ pub fn specs() -> Vec<EffectSpec> {
             ],
             vr_chromatic,
         ),
-        spec("ec.vr.colorgradients", "VR Color Gradients", grad, vr_gradients),
+        spec("ec.vr.colorgradients", "VR Color Gradients", Declared::GPU, grad, vr_gradients),
         spec(
             "ec.vr.converter",
             "VR Converter",
+            Declared::GPU,
             vec![
                 layout_param(),
                 p("sourceProjection", "Source Projection", Value::Enum(0), popup(&PROJECTIONS)),
@@ -1026,6 +1034,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.vr.denoise",
             "VR De-Noise",
+            Declared::GPU,
             vec![
                 layout_param(),
                 p("noiseType", "Noise Type", Value::Enum(0), popup(&["Random Valued", "Salt-and-Pepper"])),
@@ -1037,6 +1046,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.vr.digitalglitch",
             "VR Digital Glitch",
+            Declared::GPU.time(TimeReach::Clock),
             vec![
                 layout_param(),
                 p("masterAmplitude", "Master Amplitude", num(100.0), slider(0.0, 500.0, 0.0, 200.0, 1)),
@@ -1065,6 +1075,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.vr.fractalnoise",
             "VR Fractal Noise",
+            Declared::GPU,
             vec![
                 layout_param(),
                 p("fractalType", "Fractal Type", Value::Enum(0), popup(&["Basic", "Turbulent Sharp", "Max", "Strings"])),
@@ -1088,6 +1099,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.vr.glow",
             "VR Glow",
+            Declared::GPU,
             vec![
                 layout_param(),
                 p("luminanceThreshold", "Luma Threshold", num(60.0), slider(0.0, 100.0, 0.0, 100.0, 1)),
@@ -1102,6 +1114,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.vr.planetosphere",
             "VR Plane to Sphere",
+            Declared::GPU,
             vec![
                 layout_param(),
                 p("scale", "Scale (Degrees)", num(90.0), slider(1.0, 179.0, 1.0, 179.0, 1)),
@@ -1115,6 +1128,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.vr.rotatesphere",
             "VR Rotate Sphere",
+            Declared::GPU,
             vec![
                 layout_param(),
                 p("invertRotation", "Invert Rotation", Value::Bool(false), ParamUi::Checkbox),
@@ -1127,12 +1141,14 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.vr.sharpen",
             "VR Sharpen",
+            Declared::GPU,
             vec![layout_param(), p("sharpenAmount", "Sharpen Amount", num(20.0), slider(0.0, 100.0, 0.0, 100.0, 1))],
             vr_sharpen,
         ),
         spec(
             "ec.vr.spheretoplane",
             "VR Sphere to Plane",
+            Declared::GPU,
             vec![
                 layout_param(),
                 p("horizontalFov", "Horizontal FOV", num(90.0), slider(1.0, 179.0, 10.0, 170.0, 1)),

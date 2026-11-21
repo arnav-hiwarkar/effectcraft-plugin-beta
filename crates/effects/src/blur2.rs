@@ -9,10 +9,10 @@ use effectcraft_raster::{Image, Px, gaussian_blur};
 use rayon::prelude::*;
 
 use crate::util::{Plane, gauss_plane, premul, unpremul};
-use crate::{Buf, EffectCtx, EffectSpec, num, p, popup, slider};
+use crate::{Buf, Declared, EffectCtx, EffectSpec, num, p, popup, slider};
 
-fn spec(id: &'static str, name: &'static str, params: Vec<crate::ParamSpec>, render: crate::RenderFn) -> EffectSpec {
-    EffectSpec { id, name, category: "Blur & Sharpen", params, render, gpu: false, float: true }
+fn spec(id: &'static str, name: &'static str, declared: Declared, params: Vec<crate::ParamSpec>, render: crate::RenderFn) -> EffectSpec {
+    EffectSpec { id, name, category: "Blur & Sharpen", params, render, declared, float: true }
 }
 
 #[inline]
@@ -678,6 +678,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.blur.bilateral",
             "Bilateral Blur",
+            Declared::GPU,
             vec![
                 p("radius", "Radius", num(5.0), slider(0.0, 200.0, 0.0, 50.0, 1)),
                 p("threshold", "Threshold", num(10.0), slider(0.0, 100.0, 0.0, 100.0, 1)),
@@ -688,6 +689,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.blur.smart",
             "Smart Blur",
+            Declared::GPU,
             vec![
                 p("radius", "Radius", num(3.0), slider(0.0, 100.0, 0.0, 20.0, 1)),
                 p("threshold", "Threshold", num(25.0), slider(0.0, 100.0, 0.0, 100.0, 1)),
@@ -698,6 +700,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.blur.channel",
             "Channel Blur",
+            Declared::GPU,
             vec![
                 p("redBlurriness", "Red Blurriness", num(0.0), blur_s()),
                 p("greenBlurriness", "Green Blurriness", num(0.0), blur_s()),
@@ -711,6 +714,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.blur.compound",
             "Compound Blur",
+            Declared::GPU,
             vec![
                 p("blurLayer", "Blur Layer", Value::Layer(None), ParamUi::Layer),
                 p("maximumBlur", "Maximum Blur", num(20.0), slider(0.0, 1000.0, 0.0, 100.0, 1)),
@@ -722,6 +726,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.blur.cameralens",
             "Camera Lens Blur",
+            Declared::GPU,
             vec![
                 p("blurRadius", "Blur Radius", num(10.0), slider(0.0, 500.0, 0.0, 100.0, 1)),
                 p(
@@ -750,6 +755,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.blur.ccradialfast",
             "Fast Radial Blur",
+            Declared::GPU,
             vec![
                 p("center", "Center", Value::Vec2([0.5, 0.5]), ParamUi::Point),
                 p("amount", "Amount", num(50.0), slider(0.0, 100.0, 0.0, 100.0, 1)),
@@ -760,6 +766,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.blur.ccvector",
             "Vector Blur",
+            Declared::GPU,
             vec![
                 p("type", "Type", Value::Enum(0), popup(&["Natural", "Constant Length", "Perpendicular", "Direction Center", "Direction Fading"])),
                 p("amount", "Amount", num(10.0), slider(0.0, 500.0, 0.0, 100.0, 1)),
@@ -773,6 +780,7 @@ pub fn specs() -> Vec<EffectSpec> {
             ..spec(
                 "ec.blur.reduceflicker",
                 "Reduce Interlace Flicker",
+                Declared::GPU,
                 vec![p("softness", "Softness", num(0.0), slider(0.0, 100.0, 0.0, 10.0, 2))],
                 reduce_flicker,
             )
@@ -780,6 +788,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.blur.cccross",
             "Cross Blur",
+            Declared::GPU,
             vec![
                 p("radiusX", "Radius X", num(10.0), slider(0.0, 500.0, 0.0, 100.0, 1)),
                 p("radiusY", "Radius Y", num(10.0), slider(0.0, 500.0, 0.0, 100.0, 1)),

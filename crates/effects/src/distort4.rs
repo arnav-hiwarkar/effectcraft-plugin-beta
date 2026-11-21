@@ -26,10 +26,10 @@ use effectcraft_raster::Image;
 use rayon::prelude::*;
 
 use crate::util::{hash1, point_in_poly};
-use crate::{Buf, EffectCtx, EffectSpec, col, num, p, popup, slider};
+use crate::{Buf, Declared, EffectCtx, EffectSpec, TimeReach, col, num, p, popup, slider};
 
-fn spec(id: &'static str, name: &'static str, params: Vec<crate::ParamSpec>, render: crate::RenderFn) -> EffectSpec {
-    EffectSpec { id, name, category: "Distort", params, render, gpu: false, float: true }
+fn spec(id: &'static str, name: &'static str, declared: Declared, params: Vec<crate::ParamSpec>, render: crate::RenderFn) -> EffectSpec {
+    EffectSpec { id, name, category: "Distort", params, render, declared, float: true }
 }
 
 // ---------------------------------------------------------------- Dual Lens Warp
@@ -561,6 +561,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.distort.ccflomotion",
             "Dual Lens Warp",
+            Declared::GPU,
             vec![
                 p("knot1", "Knot 1", Value::Vec2([0.25, 0.5]), ParamUi::Point),
                 p("amount1", "Amount 1", num(50.0), slider(-400.0, 100.0, -100.0, 100.0, 1)),
@@ -575,6 +576,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.distort.liquify",
             "Liquify",
+            Declared::GPU,
             vec![
                 p("tool", "Tool", Value::Enum(0), popup(&LIQUIFY_TOOL_LABELS)),
                 p("brushSize", "Brush Size", num(64.0), slider(1.0, 600.0, 1.0, 600.0, 0)),
@@ -598,6 +600,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.distort.rollingshutterrepair",
             "Rolling Shutter Repair",
+            Declared::CPU.time(TimeReach::Neighbours),
             vec![
                 p("rollingShutterRate", "Rolling Shutter Rate", num(50.0), slider(0.0, 100.0, 0.0, 100.0, 1)),
                 p("scanDirection", "Scan Direction", Value::Enum(0), popup(&["Top → Bottom", "Bottom → Top", "Left → Right", "Right → Left"])),

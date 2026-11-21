@@ -7,10 +7,10 @@ use effectcraft_project::ParamUi;
 use rayon::prelude::*;
 
 use crate::util::{Plane, SRC_NAMES, Src, join, layer_or_self, morph_plane, pick, premul, src_at, unpremul};
-use crate::{Buf, EffectCtx, EffectSpec, col, num, p, popup, slider};
+use crate::{Buf, Declared, EffectCtx, EffectSpec, col, num, p, popup, slider};
 
-fn spec(id: &'static str, name: &'static str, params: Vec<crate::ParamSpec>, render: crate::RenderFn) -> EffectSpec {
-    EffectSpec { id, name, category: "Channel", params, render, gpu: false, float: true }
+fn spec(id: &'static str, name: &'static str, declared: Declared, params: Vec<crate::ParamSpec>, render: crate::RenderFn) -> EffectSpec {
+    EffectSpec { id, name, category: "Channel", params, render, declared, float: true }
 }
 
 /// Route four sources into R, G, B, A (straight colour), premultiplying the result.
@@ -398,6 +398,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.channel.setchannels",
             "Set Channels",
+            Declared::GPU,
             vec![
                 p("sourceLayer1", "Source Layer 1", Value::Layer(None), ParamUi::Layer),
                 srcp("setRedTo", "Set Red To Source 1's", 0),
@@ -414,6 +415,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.channel.shiftchannels",
             "Shift Channels",
+            Declared::GPU,
             vec![
                 shp("takeAlphaFrom", "Take Alpha From", 0),
                 shp("takeRedFrom", "Take Red From", 1),
@@ -425,6 +427,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.channel.combiner",
             "Channel Combiner",
+            Declared::GPU,
             vec![
                 p("useSecondLayer", "Use 2nd Layer", Value::Bool(false), ParamUi::Checkbox),
                 p("sourceLayer", "Source Layer", Value::Layer(None), ParamUi::Layer),
@@ -438,6 +441,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.channel.minimax",
             "Minimax",
+            Declared::GPU,
             vec![
                 p("operation", "Operation", Value::Enum(1), popup(&["Minimum", "Maximum", "Minimum Then Maximum", "Maximum Then Minimum"])),
                 p("radius", "Radius", num(0.0), slider(0.0, 500.0, 0.0, 100.0, 0)),
@@ -450,6 +454,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.channel.arithmetic",
             "Arithmetic",
+            Declared::GPU,
             vec![
                 p(
                     "operator",
@@ -467,6 +472,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.channel.solidcomposite",
             "Solid Composite",
+            Declared::GPU,
             vec![
                 p("sourceOpacity", "Source Opacity", num(100.0), slider(0.0, 100.0, 0.0, 100.0, 1)),
                 p("color", "Color", col(1.0, 1.0, 1.0), ParamUi::Color),
@@ -478,6 +484,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.channel.removecolormatting",
             "Remove Color Matting",
+            Declared::GPU,
             vec![
                 p("backgroundColor", "Background Color", col(0.0, 0.0, 0.0), ParamUi::Color),
                 p("clipHdr", "Clip HDR Values", Value::Bool(true), ParamUi::Checkbox),
@@ -487,6 +494,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.channel.setmatte",
             "Set Matte",
+            Declared::GPU,
             vec![
                 p("takeMatteFromLayer", "Take Matte From Layer", Value::Layer(None), ParamUi::Layer),
                 p(

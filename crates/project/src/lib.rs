@@ -31,6 +31,7 @@ pub use effectcraft_keyframe as keyframe;
 pub use effectcraft_keyframe::{Keyframe, Value};
 
 mod comp;
+mod declared;
 mod dirty;
 mod footage;
 mod item;
@@ -40,13 +41,11 @@ mod reach;
 mod settings;
 
 pub use comp::{Comp, Guide, Renderer, Resolution};
+pub use declared::{Cover, Declared, EffectInputs, EffectRole, FindDeclared, Routes, TimeReach};
 pub use footage::{AlphaMode, CineonSettings, CineonUnits, FieldOrder, Footage, FootageKind, Proxy, Solid, SourceLayer, VIDEO_EXTENSIONS, cineon_log_to_lin};
 pub use item::NO_LAYER;
 pub use item::{Heard, Item, ItemId, ItemKind, LayerId};
-pub use layer::{
-    AutoOrient, FrameBlend, Layer, LayerSource, LightKind, MatteKind, PrimitiveKind, Quality, Sampling, Switches, TrackMatte, is_audio_effect,
-    reads_other_frames, text_layer_name,
-};
+pub use layer::{AutoOrient, FrameBlend, Layer, LayerSource, LightKind, MatteKind, PrimitiveKind, Quality, Sampling, Switches, TrackMatte, text_layer_name};
 pub use layers::Layers;
 pub use reach::{ExprReach, PixelReach, expression_reach};
 pub use settings::{

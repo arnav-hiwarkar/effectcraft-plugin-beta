@@ -26,7 +26,7 @@ use effectcraft_project::{GroupKind, ParamUi, PropGroup, Property};
 use effectcraft_raster::Image;
 use rayon::prelude::*;
 
-use crate::{Buf, EffectCtx, EffectSpec, Params, p, slider};
+use crate::{Buf, Declared, EffectCtx, EffectSpec, Params, p, slider};
 pub use mesh::{Mesh, MeshOpts};
 
 /// Effect id of the Puppet effect.
@@ -92,7 +92,7 @@ pub fn specs() -> Vec<EffectSpec> {
         category: "Distort",
         params: vec![p("refinement", "Mesh Rotation Refinement", Value::Scalar(20.0), slider(0.0, 100.0, 0.0, 100.0, 0))],
         render,
-        gpu: false,
+        declared: Declared::CPU,
         float: true,
     }]
 }

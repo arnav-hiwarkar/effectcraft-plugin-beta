@@ -10,10 +10,10 @@ use effectcraft_project::ParamUi;
 use rayon::prelude::*;
 
 use crate::util::{premul, unpremul};
-use crate::{Buf, EffectCtx, EffectSpec, Params, col, num, p, popup, slider};
+use crate::{Buf, Declared, EffectCtx, EffectSpec, Params, col, num, p, popup, slider};
 
-fn spec(id: &'static str, name: &'static str, params: Vec<crate::ParamSpec>, render: crate::RenderFn) -> EffectSpec {
-    EffectSpec { id, name, category: "Utility", params, render, gpu: false, float: true }
+fn spec(id: &'static str, name: &'static str, declared: Declared, params: Vec<crate::ParamSpec>, render: crate::RenderFn) -> EffectSpec {
+    EffectSpec { id, name, category: "Utility", params, render, declared, float: true }
 }
 
 fn grow_bounds(ctx: &EffectCtx, mut b: Buf) -> Buf {
@@ -473,10 +473,11 @@ fn apply_lut(ctx: &EffectCtx, mut b: Buf) -> Buf {
 
 pub fn specs() -> Vec<EffectSpec> {
     vec![
-        spec("ec.utility.growbounds", "Grow Bounds", vec![p("pixels", "Pixels", num(0.0), slider(0.0, 4000.0, 0.0, 500.0, 0))], grow_bounds),
+        spec("ec.utility.growbounds", "Grow Bounds", Declared::GPU, vec![p("pixels", "Pixels", num(0.0), slider(0.0, 4000.0, 0.0, 500.0, 0))], grow_bounds),
         spec(
             "ec.utility.ccoverbrights",
             "Out-of-Range Display",
+            Declared::GPU,
             vec![
                 p("channel", "Channel", Value::Enum(0), popup(&["Max RGB", "Red", "Green", "Blue", "Alpha", "Luminance"])),
                 p("highlightColor", "Highlight Color", col(1.0, 0.0, 0.0), ParamUi::Color),
@@ -486,12 +487,14 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.utility.hdrcompression",
             "HDR Highlight Compression",
+            Declared::GPU,
             vec![p("amount", "Amount", num(100.0), slider(0.0, 100.0, 0.0, 100.0, 1))],
             hdr_compression,
         ),
         spec(
             "ec.utility.cineon",
             "Cineon Converter",
+            Declared::GPU,
             vec![
                 p("conversionType", "Conversion Type", Value::Enum(1), popup(&["Linear to Log", "Log to Linear", "Log to Log"])),
                 p("tenBitBlackPoint", "10 Bit Black Point", num(95.0), slider(0.0, 1023.0, 0.0, 1023.0, 0)),
@@ -507,7 +510,7 @@ pub fn specs() -> Vec<EffectSpec> {
         ),
         // `lut`: a path to a `.cube` file (Effect Controls' Choose…, asked for when the effect is
         // applied, as in After Effects), or the `.cube` text itself (commands/automation).
-        spec("ec.utility.applylut", "Apply Color LUT", vec![p("lut", "LUT", Value::Str(String::new()), crate::file_ui(&["cube"]))], apply_lut),
+        spec("ec.utility.applylut", "Apply Color LUT", Declared::GPU, vec![p("lut", "LUT", Value::Str(String::new()), crate::file_ui(&["cube"]))], apply_lut),
     ]
 }
 

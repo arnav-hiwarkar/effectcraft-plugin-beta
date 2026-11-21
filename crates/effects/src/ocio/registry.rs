@@ -5,6 +5,7 @@ use super::effects::{
 };
 use super::space::SPACES;
 use super::{EffectSpec, ParamUi, Value, num, p, popup, slider};
+use crate::{Declared, TimeReach};
 
 pub fn specs() -> Vec<EffectSpec> {
     let cc = "Color Correction";
@@ -17,6 +18,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.color.ociocdl",
             "OCIO CDL Transform",
+            Declared::GPU,
             cc,
             vec![
                 p("slopeRed", "Slope Red", num(1.0), sl(0.0, 100.0, 0.0, 4.0)),
@@ -37,6 +39,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.color.ociocolorspace",
             "OCIO Color Space Transform",
+            Declared::GPU,
             cc,
             vec![
                 p("config", "Configuration", Value::Enum(0), popup(CONFIGS)),
@@ -52,6 +55,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.color.ociodisplay",
             "OCIO Display Transform",
+            Declared::GPU,
             cc,
             vec![
                 p("config", "Configuration", Value::Enum(0), popup(CONFIGS)),
@@ -70,6 +74,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.color.ociofile",
             "OCIO File Transform",
+            Declared::GPU,
             cc,
             vec![
                 p("file", "File", Value::Str(String::new()), crate::file_ui(&["cube", "3dl", "csp", "cc", "ccc", "cdl", "spi1d", "spi3d", "spimtx"])),
@@ -82,6 +87,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.color.ociolook",
             "OCIO Look Transform",
+            Declared::GPU,
             cc,
             vec![
                 p("config", "Configuration", Value::Enum(0), popup(&["Built-in (EffectCraft minimal)"])),
@@ -96,6 +102,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.color.colorstabilizer",
             "Color Stabilizer",
+            Declared::GPU.time(TimeReach::OtherFrames),
             cc,
             vec![
                 // The pivot frame (After Effects' Set Frame button stores it).
@@ -111,6 +118,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.utility.colorprofileconverter",
             "Color Profile Converter",
+            Declared::GPU,
             "Utility",
             vec![
                 p("inputProfile", "Input Profile", Value::Enum(0), popup(PROFILES)),

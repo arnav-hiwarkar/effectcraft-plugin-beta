@@ -1,32 +1,38 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use crate::EffectSpec;
 use crate::plugin::{EffectPlugin, PluginFrame, PluginManifest, PluginParams, register_plugin};
+use crate::{Cover, EffectInputs, EffectRole, EffectSpec, Routes, TimeReach};
 
 type Row = (&'static str, &'static str, &'static str, &'static str, &'static str, &'static str);
 
 fn row(s: &EffectSpec) -> Row {
-    let id = s.id;
-    let plugin = !id.starts_with("ec.");
-    let clock = crate::is_time_dependent(id);
-    let frames = effectcraft_project::reads_other_frames(id);
-    let history = id.starts_with("ec.time.") || crate::reads_param_history(id) || (plugin && crate::plugin::reads_other_times(id));
-    let time = match (clock, frames, history) {
-        (false, false, false) => "frame",
-        (true, false, false) => "clock",
-        (false, true, false) => "other-frames",
-        (true, true, false) => "neighbours",
-        (true, true, true) => "history",
-        _ => "unrepresentable",
-    };
+    let d = s.declared;
     (
         s.id,
-        if crate::audio_fx::is_audio_effect(id) { "audio" } else { "filter" },
-        if s.gpu { "gpu" } else { "cpu" },
-        time,
-        if crate::READS_COMP_SCENE.contains(&id) { "comp-scene" } else { "layer" },
-        if s.skips_cover() { "own-margins" } else { "layer" },
+        match d.role {
+            EffectRole::Filter => "filter",
+            EffectRole::Audio => "audio",
+        },
+        match d.routes {
+            Routes::Cpu => "cpu",
+            Routes::CpuAndGpu => "gpu",
+        },
+        match d.time {
+            TimeReach::Frame => "frame",
+            TimeReach::Clock => "clock",
+            TimeReach::OtherFrames => "other-frames",
+            TimeReach::Neighbours => "neighbours",
+            TimeReach::History => "history",
+        },
+        match d.inputs {
+            EffectInputs::Layer => "layer",
+            EffectInputs::CompScene => "comp-scene",
+        },
+        match d.cover {
+            Cover::Layer => "layer",
+            Cover::OwnMargins => "own-margins",
+        },
     )
 }
 

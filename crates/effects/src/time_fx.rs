@@ -22,10 +22,10 @@ use rayon::prelude::*;
 use effectcraft_raster::flow::Flow;
 
 use crate::util::{fit_layer, unpremul};
-use crate::{Buf, EffectCtx, EffectSpec, num, p, popup, slider};
+use crate::{Buf, Declared, EffectCtx, EffectSpec, TimeReach, num, p, popup, slider};
 
-fn spec(id: &'static str, name: &'static str, params: Vec<crate::ParamSpec>, render: crate::RenderFn) -> EffectSpec {
-    EffectSpec { id, name, category: "Time", params, render, gpu: false, float: true }
+fn spec(id: &'static str, name: &'static str, declared: Declared, params: Vec<crate::ParamSpec>, render: crate::RenderFn) -> EffectSpec {
+    EffectSpec { id, name, category: "Time", params, render, declared, float: true }
 }
 
 pub fn specs() -> Vec<EffectSpec> {
@@ -33,6 +33,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.time.echo",
             "Echo",
+            Declared::GPU.time(TimeReach::History),
             vec![
                 p("echoTime", "Echo Time (seconds)", num(-1.0 / 30.0), slider(-30.0, 30.0, -5.0, 5.0, 3)),
                 p("numberOfEchoes", "Number Of Echoes", num(1.0), slider(0.0, 255.0, 0.0, 30.0, 0)),
@@ -47,10 +48,17 @@ pub fn specs() -> Vec<EffectSpec> {
             ],
             echo,
         ),
-        spec("ec.time.posterizetime", "Posterize Time", vec![p("frameRate", "Frame Rate", num(12.0), slider(0.1, 99.0, 1.0, 60.0, 1))], posterize_time),
+        spec(
+            "ec.time.posterizetime",
+            "Posterize Time",
+            Declared::GPU.time(TimeReach::History),
+            vec![p("frameRate", "Frame Rate", num(12.0), slider(0.1, 99.0, 1.0, 60.0, 1))],
+            posterize_time,
+        ),
         spec(
             "ec.time.timedifference",
             "Time Difference",
+            Declared::GPU.time(TimeReach::History),
             vec![
                 p("targetLayer", "Target", Value::Layer(None), ParamUi::Layer),
                 p("timeOffset", "Time Offset (sec)", num(0.0), slider(-30.0, 30.0, -5.0, 5.0, 3)),
@@ -78,6 +86,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.time.timedisplacement",
             "Time Displacement",
+            Declared::GPU.time(TimeReach::History),
             vec![
                 p("displacementMapLayer", "Time Displacement Layer", Value::Layer(None), ParamUi::Layer),
                 p("maxDisplacementTime", "Max Displacement Time (sec)", num(1.0), slider(-30.0, 30.0, -5.0, 5.0, 2)),
@@ -89,6 +98,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.time.timewarp",
             "Timewarp",
+            Declared::GPU.time(TimeReach::History),
             vec![
                 p("method", "Method", Value::Enum(2), popup(&["Whole Frames", "Frame Mix", "Pixel Motion"])),
                 p("adjustTimeBy", "Adjust Time By", Value::Enum(0), popup(&["Speed", "Source Frame"])),
@@ -124,6 +134,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.time.ccforcemotionblur",
             "Temporal Motion Blur",
+            Declared::GPU.time(TimeReach::History),
             vec![
                 p("motionBlurLevels", "Motion Blur Levels", num(8.0), slider(2.0, 64.0, 2.0, 32.0, 0)),
                 p("overrideShutterAngle", "Override Shutter Angle", Value::Bool(true), ParamUi::Checkbox),
@@ -135,6 +146,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.time.ccwidetime",
             "Temporal Blend",
+            Declared::GPU.time(TimeReach::History),
             vec![
                 p("forwardSteps", "Forward Steps", num(3.0), slider(0.0, 45.0, 0.0, 15.0, 0)),
                 p("backwardSteps", "Backward Steps", num(3.0), slider(0.0, 45.0, 0.0, 15.0, 0)),
@@ -145,6 +157,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.time.pixelmotionblur",
             "Pixel Motion Blur",
+            Declared::GPU.time(TimeReach::History),
             vec![
                 p("shutterControl", "Shutter Control", Value::Enum(0), popup(&["Automatic", "Manual"])),
                 p("shutterAngle", "Shutter Angle", num(180.0), slider(0.0, 720.0, 0.0, 360.0, 1)),

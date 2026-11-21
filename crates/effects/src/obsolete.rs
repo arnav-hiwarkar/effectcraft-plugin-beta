@@ -7,10 +7,10 @@ use effectcraft_raster::gaussian_blur;
 use rayon::prelude::*;
 
 use crate::util::layer_rect;
-use crate::{Buf, EffectCtx, EffectSpec, num, p, popup, slider};
+use crate::{Buf, Declared, EffectCtx, EffectSpec, num, p, popup, slider};
 
-fn spec(id: &'static str, name: &'static str, params: Vec<crate::ParamSpec>, render: crate::RenderFn) -> EffectSpec {
-    EffectSpec { id, name, category: "Obsolete", params, render, gpu: false, float: true }
+fn spec(id: &'static str, name: &'static str, declared: Declared, params: Vec<crate::ParamSpec>, render: crate::RenderFn) -> EffectSpec {
+    EffectSpec { id, name, category: "Obsolete", params, render, declared, float: true }
 }
 
 // ---------------------------------------------------------------- Basic 3D
@@ -114,6 +114,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.obsolete.basic3d",
             "Basic 3D",
+            Declared::GPU,
             vec![
                 p("swivel", "Swivel", num(0.0), ParamUi::Angle),
                 p("tilt", "Tilt", num(0.0), ParamUi::Angle),
@@ -126,6 +127,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.obsolete.gaussianlegacy",
             "Gaussian Blur (Legacy)",
+            Declared::GPU,
             vec![
                 p("blurriness", "Blurriness", num(0.0), slider(0.0, 1000.0, 0.0, 50.0, 1)),
                 p("blurDimensions", "Blur Dimensions", Value::Enum(0), popup(&["Horizontal and Vertical", "Horizontal", "Vertical"])),

@@ -566,7 +566,12 @@ pub fn comp_content(project: &Project, comp: ItemId) -> u64 {
 /// ([`Project::dirty_spans`]), a frame wider either side for rounding.
 fn dirty_frames(old: &Project, new: &Project, comp: ItemId, heard: &Heard, outside: bool) -> Option<Vec<(i64, i64)>> {
     let fr = new.comp(comp)?.frame_rate;
-    Some(new.dirty_spans(old, comp, heard, outside)?.into_iter().map(|(s, e)| (fr.frame_at(s).saturating_sub(1), fr.frame_at(e).saturating_add(1))).collect())
+    Some(
+        new.dirty_spans(old, comp, heard, outside, effectcraft_engine::effects::declared)?
+            .into_iter()
+            .map(|(s, e)| (fr.frame_at(s).saturating_sub(1), fr.frame_at(e).saturating_add(1)))
+            .collect(),
+    )
 }
 
 /// [`comp_content`] with each comp's version selected for both its sources and its address.
@@ -1172,7 +1177,11 @@ impl Frames {
                 comp,
                 project,
                 |id, c| match base.item(id).map(|i| &i.kind) {
-                    Some(ItemKind::Comp(b)) if Arc::ptr_eq(b, c) || b.same_pixels_with(c, markers, &|l| heard.contains(id, l)) => b,
+                    Some(ItemKind::Comp(b))
+                        if Arc::ptr_eq(b, c) || b.same_pixels_with(c, markers, &|l| heard.contains(id, l), effectcraft_engine::effects::declared) =>
+                    {
+                        b
+                    }
                     _ => c,
                 },
                 true,
@@ -1188,7 +1197,11 @@ impl Frames {
         // layers that have one.
         let base_comp = |id: ItemId| bases.get(&comp.0).and_then(|(_, base)| base.item(id)).map(|i| &i.kind);
         let base_tree = |id, c| match base_comp(id) {
-            Some(ItemKind::Comp(b)) if id == comp || Arc::ptr_eq(b, c) || b.same_pixels_with(c, markers, &|l| heard.contains(id, l)) => b,
+            Some(ItemKind::Comp(b))
+                if id == comp || Arc::ptr_eq(b, c) || b.same_pixels_with(c, markers, &|l| heard.contains(id, l), effectcraft_engine::effects::declared) =>
+            {
+                b
+            }
             _ => c,
         };
         let base_comps = |id, c| match base_comp(id) {

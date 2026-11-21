@@ -1245,7 +1245,7 @@ fn list(_: &mut Session, p: &Value) -> Result<Value> {
             filter.as_ref().is_none_or(|f| effectcraft_effects::name_matches(e, f) || e.id.contains(f.as_str()) || e.category.to_ascii_lowercase().contains(f))
         })
         .map(|e| {
-            json!({"id": e.id, "name": e.name, "category": e.category, "gpu": e.gpu, "float": e.float, "params": e.params.iter().map(|p| {
+            json!({"id": e.id, "name": e.name, "category": e.category, "gpu": e.declared.runs_on_gpu(), "float": e.float, "params": e.params.iter().map(|p| {
                 let mut out = json!({"id": p.id, "name": p.name, "type": p.default.kind_name(), "default": p.default.to_json()});
                 match &p.ui {
                     effectcraft_project::ParamUi::Popup { options } => {

@@ -37,7 +37,7 @@ use effectcraft_keyframe::Value;
 use effectcraft_project::ParamUi;
 use serde::{Deserialize, Serialize};
 
-use crate::{Buf, EffectCtx, EffectSpec, ParamSpec, Params, RenderFn};
+use crate::{Buf, Declared, EffectCtx, EffectSpec, ParamSpec, Params, RenderFn, TimeReach};
 
 /// The plug-in API version this build implements (manifests with API 1 or 2 are accepted).
 pub const PLUGIN_API_VERSION: u32 = 2;
@@ -459,12 +459,6 @@ pub fn plugin(id: &str) -> Option<Arc<dyn EffectPlugin>> {
     SLOTS.iter().filter_map(|s| s.get()).find(|p| p.manifest().id == id).cloned()
 }
 
-/// Whether the registered plug-in `id` reads the layer at other times (its neighbouring frames),
-/// so the render cache must key its layer on the layer time.
-pub fn reads_other_times(id: &str) -> bool {
-    SLOTS.iter().filter_map(|s| s.get()).any(|p| p.manifest().id == id && p.reads_other_times())
-}
-
 fn leak(s: &str) -> &'static str {
     Box::leak(s.to_string().into_boxed_str())
 }
@@ -504,6 +498,7 @@ pub fn register_plugin(plugin: Arc<dyn EffectPlugin>) -> Result<&'static EffectS
     if crate::registry().iter().any(|s| s.id == m.id) || specs.iter().any(|s| s.id == m.id) {
         return Err(format!("an effect with id `{}` is already registered", m.id));
     }
+    let time = if plugin.reads_other_times() { TimeReach::History } else { TimeReach::OtherFrames };
     let slot = SLOTS
         .iter()
         .position(|s| s.get().is_none())
@@ -515,7 +510,7 @@ pub fn register_plugin(plugin: Arc<dyn EffectPlugin>) -> Result<&'static EffectS
         category: leak(&m.category),
         params: m.params.iter().map(param_spec).collect(),
         render: TRAMPOLINES[slot],
-        gpu: false,
+        declared: Declared::CPU.time(time),
         float: true,
     }));
     specs.push(spec);

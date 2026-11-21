@@ -97,7 +97,9 @@ rustflags = ["-C", "link-self-contained=yes", "-L", "native=C:/gnu-import-libs"]
 
 - **An effect:** add an `EffectSpec` in `crates/effects` (AE display name, category, parameters
   with AE's names, defaults and ranges) and its render function, with a determinism test and a
-  behaviour test. If it reads the clock directly, add it to `TIME_DEPENDENT`.
+  behaviour test. Its `Declared` value says where it runs and what it reads: if it reads the
+  clock directly, give it a `TimeReach` that reads the clock. Add its row to
+  `crates/effects/src/declared_table.rs`.
 - **A command:** register it with `cmd!` in `crates/engine/src/commands/`, place it in the menu
   tree in `crates/engine/src/menus.rs`, and test it including undo.
 - **A panel or dialog:** `crates/ui-egui/src/panels/`; look at the result with the headless
