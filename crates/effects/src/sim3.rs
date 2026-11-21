@@ -1141,7 +1141,7 @@ pub fn specs() -> Vec<EffectSpec> {
     pg.push(p("randomSeed", "Random Seed", num(0.0), slider(0.0, 10000.0, 0.0, 1000.0, 0)));
     let pc = |d: f64| (num(d), slider(0.0, 100.0, 0.0, 100.0, 1));
     vec![
-        spec("ec.sim.particleplayground", "Particle Playground", Declared::Filter(Visual::GPU.time(TimeReach::ClockAndOtherFrames)), pg, particle_playground),
+        spec("ec.sim.particleplayground", "Particle Playground", Declared::Filter(Visual::GPU.time(TimeReach::OtherTimesUnkeyed)), pg, particle_playground),
         spec(
             "ec.sim.cchair",
             "Surface Fibers",

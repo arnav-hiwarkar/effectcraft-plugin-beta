@@ -179,7 +179,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.sim.waveworld",
             "Wave World",
-            Declared::Filter(Visual::GPU.time(TimeReach::ClockAndOtherFrames)),
+            Declared::Filter(Visual::GPU.time(TimeReach::OtherTimesUnkeyed)),
             {
                 let mut v = vec![
                     p("view", "View", Value::Enum(0), popup(&["Wireframe Preview", "Height Map"])),
@@ -266,7 +266,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.sim.foam",
             "Foam",
-            Declared::Filter(Visual::GPU.time(TimeReach::ClockAndOtherFrames)),
+            Declared::Filter(Visual::GPU.time(TimeReach::OtherTimesUnkeyed)),
             vec![
                 p("view", "View", Value::Enum(0), popup(&["Draft", "Draft + Flow Map", "Rendered"])),
                 p("producer/producerPoint", "Producer Point", pt(0.5, 0.5), ParamUi::Point),

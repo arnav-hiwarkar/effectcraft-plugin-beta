@@ -315,8 +315,8 @@ pub fn specs() -> Vec<EffectSpec> {
             ],
             matte_choker,
         ),
-        spec("ec.matte.refinesoft", "Refine Soft Matte", Declared::Filter(Visual::GPU.time(TimeReach::ClockAndOtherFrames)), soft_params, refine_soft),
-        spec("ec.matte.refinehard", "Refine Hard Matte", Declared::Filter(Visual::GPU.time(TimeReach::ClockAndOtherFrames)), hard_params, refine_hard),
+        spec("ec.matte.refinesoft", "Refine Soft Matte", Declared::Filter(Visual::GPU.time(TimeReach::OtherTimesUnkeyed)), soft_params, refine_soft),
+        spec("ec.matte.refinehard", "Refine Hard Matte", Declared::Filter(Visual::GPU.time(TimeReach::OtherTimesUnkeyed)), hard_params, refine_hard),
     ]
 }
 

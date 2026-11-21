@@ -78,7 +78,7 @@ pub fn specs() -> Vec<EffectSpec> {
             p(FROZEN, "Frozen", Value::Str(String::new()), ParamUi::Hidden),
         ],
         render,
-        declared: Declared::Filter(Visual::CPU.time(TimeReach::ClockAndOtherFrames)),
+        declared: Declared::Filter(Visual::CPU.time(TimeReach::OtherTimesUnkeyed)),
         float: true,
     }]
 }

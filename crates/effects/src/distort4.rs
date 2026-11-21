@@ -600,7 +600,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.distort.rollingshutterrepair",
             "Rolling Shutter Repair",
-            Declared::Filter(Visual::CPU.time(TimeReach::ClockAndOtherFrames)),
+            Declared::Filter(Visual::CPU.time(TimeReach::OtherTimesUnkeyed)),
             vec![
                 p("rollingShutterRate", "Rolling Shutter Rate", num(50.0), slider(0.0, 100.0, 0.0, 100.0, 1)),
                 p("scanDirection", "Scan Direction", Value::Enum(0), popup(&["Top → Bottom", "Bottom → Top", "Left → Right", "Right → Left"])),

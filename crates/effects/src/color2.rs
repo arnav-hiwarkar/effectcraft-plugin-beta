@@ -1041,9 +1041,9 @@ pub fn specs() -> Vec<EffectSpec> {
             curves,
         ),
         spec("ec.color.levelsic", "Levels (Individual Controls)", Declared::Filter(Visual::GPU), lv_params, levels_ic),
-        spec("ec.color.autolevels", "Auto Levels", Declared::Filter(Visual::GPU.time(TimeReach::ClockAndOtherFrames)), clip_params(false), auto_levels),
-        spec("ec.color.autocontrast", "Auto Contrast", Declared::Filter(Visual::GPU.time(TimeReach::ClockAndOtherFrames)), clip_params(false), auto_contrast),
-        spec("ec.color.autocolor", "Auto Color", Declared::Filter(Visual::GPU.time(TimeReach::ClockAndOtherFrames)), clip_params(true), auto_color),
+        spec("ec.color.autolevels", "Auto Levels", Declared::Filter(Visual::GPU.time(TimeReach::OtherTimesUnkeyed)), clip_params(false), auto_levels),
+        spec("ec.color.autocontrast", "Auto Contrast", Declared::Filter(Visual::GPU.time(TimeReach::OtherTimesUnkeyed)), clip_params(false), auto_contrast),
+        spec("ec.color.autocolor", "Auto Color", Declared::Filter(Visual::GPU.time(TimeReach::OtherTimesUnkeyed)), clip_params(true), auto_color),
         spec(
             "ec.color.equalize",
             "Equalize",
@@ -1057,7 +1057,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.color.shadowhighlight",
             "Shadow/Highlight",
-            Declared::Filter(Visual::GPU.time(TimeReach::ClockAndOtherFrames)),
+            Declared::Filter(Visual::GPU.time(TimeReach::OtherTimesUnkeyed)),
             vec![
                 p("autoAmounts", "Auto Amounts", Value::Bool(true), ParamUi::Checkbox),
                 p("shadowAmount", "Shadow Amount", num(50.0), slider(0.0, 100.0, 0.0, 100.0, 0)),

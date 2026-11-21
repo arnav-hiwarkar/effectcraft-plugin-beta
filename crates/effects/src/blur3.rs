@@ -259,7 +259,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.blur.camerashakedeblur",
             "Camera-Shake Deblur",
-            Declared::Filter(Visual::CPU.time(TimeReach::ClockAndOtherFrames)),
+            Declared::Filter(Visual::CPU.time(TimeReach::OtherTimesUnkeyed)),
             vec![
                 p("blurDuration", "Blur Duration", num(2.0), slider(1.0, 10.0, 1.0, 10.0, 0)),
                 p("deblurMethod", "Deblur Method", Value::Enum(0), popup(&["High Quality (slower)", "Standard"])),
