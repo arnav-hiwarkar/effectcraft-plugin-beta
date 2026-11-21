@@ -213,7 +213,7 @@ impl Accelerator for Deferred {
         None
     }
     fn supports_effect(&self, id: &str) -> bool {
-        effectcraft_effects::GPU_EFFECTS.contains(&id)
+        effectcraft_effects::declared(id).is_some_and(|d| d.runs_on_gpu())
     }
     fn effects(&self, chain: &[effectcraft_render::FxStep], buf: &effectcraft_effects::Buf, levels: Option<f32>) -> Option<effectcraft_effects::Buf> {
         use std::hash::{Hash, Hasher};

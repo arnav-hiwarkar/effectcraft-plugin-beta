@@ -7,10 +7,10 @@ use effectcraft_raster::gaussian_blur;
 use rayon::prelude::*;
 
 use crate::util::{Plane, gauss_plane, guided_filter, morph_frac, morph_plane, premul, set_alpha, unpremul};
-use crate::{Buf, EffectCtx, EffectSpec, num, p, popup, slider};
+use crate::{Buf, Declared, EffectCtx, EffectSpec, TimeReach, Visual, num, p, popup, slider};
 
-fn spec(id: &'static str, name: &'static str, params: Vec<crate::ParamSpec>, render: crate::RenderFn) -> EffectSpec {
-    EffectSpec { id, name, category: "Matte", params, render, gpu: false, float: true }
+fn spec(id: &'static str, name: &'static str, declared: Declared, params: Vec<crate::ParamSpec>, render: crate::RenderFn) -> EffectSpec {
+    EffectSpec { id, name, category: "Matte", params, render, declared, float: true }
 }
 
 fn matte_view(b: &mut Buf) {
@@ -293,6 +293,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.matte.simplechoker",
             "Simple Choker",
+            Declared::Filter(Visual::GPU),
             vec![
                 p("view", "View", Value::Enum(0), popup(&["Final Output", "Matte"])),
                 p("chokeMatte", "Choke Matte", num(0.0), slider(-100.0, 100.0, -10.0, 10.0, 2)),
@@ -302,6 +303,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.matte.mattechoker",
             "Matte Choker",
+            Declared::Filter(Visual::GPU),
             vec![
                 p("geometricSoftness1", "Geometric Softness 1", num(4.0), soft()),
                 p("choke1", "Choke 1", num(75.0), ch()),
@@ -313,8 +315,8 @@ pub fn specs() -> Vec<EffectSpec> {
             ],
             matte_choker,
         ),
-        spec("ec.matte.refinesoft", "Refine Soft Matte", soft_params, refine_soft),
-        spec("ec.matte.refinehard", "Refine Hard Matte", hard_params, refine_hard),
+        spec("ec.matte.refinesoft", "Refine Soft Matte", Declared::Filter(Visual::GPU.time(TimeReach::OtherTimesUnkeyed)), soft_params, refine_soft),
+        spec("ec.matte.refinehard", "Refine Hard Matte", Declared::Filter(Visual::GPU.time(TimeReach::OtherTimesUnkeyed)), hard_params, refine_hard),
     ]
 }
 

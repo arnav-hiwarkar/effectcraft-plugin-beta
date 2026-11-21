@@ -8,7 +8,7 @@ use effectcraft_keyframe::Value;
 use rayon::prelude::*;
 
 use crate::util::{premul, unpremul};
-use crate::{Buf, EffectCtx, EffectSpec, num, p, popup, slider};
+use crate::{Buf, Declared, EffectCtx, EffectSpec, Visual, num, p, popup, slider};
 
 #[inline]
 fn spow(v: f32, e: f32) -> f32 {
@@ -41,7 +41,7 @@ pub fn specs() -> Vec<EffectSpec> {
             p("gamma", "Gamma", num(1.0), slider(0.1, 10.0, 0.1, 3.0, 2)),
         ],
         render: hdr_compander,
-        gpu: false,
+        declared: Declared::Filter(Visual::GPU),
         float: true,
     }]
 }

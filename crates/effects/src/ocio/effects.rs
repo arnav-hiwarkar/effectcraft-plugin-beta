@@ -2,6 +2,7 @@ use super::cdl::Cdl;
 use super::lut::load_file;
 use super::space::{ACES_CCT, ACES_CG, ACES2065_1, D65, IDENTITY, P3, REC709, REC2020, SPACES, Space, Tf, Xform, matrix, sp, space_names};
 use super::{Buf, ColorSpace, EffectCtx, EffectSpec, IntoParallelRefMutIterator, ParallelIterator, Value, invert, mul, mul_vec, p, popup, unpremul};
+use crate::Declared;
 
 // ---------------------------------------------------------------- displays, views and looks
 
@@ -76,8 +77,15 @@ pub fn display_xform(input: &Space, display: usize, view: usize, inverse: bool) 
 
 // ---------------------------------------------------------------- effects
 
-pub(super) fn spec(id: &'static str, name: &'static str, cat: &'static str, params: Vec<crate::ParamSpec>, render: crate::RenderFn) -> EffectSpec {
-    EffectSpec { id, name, category: cat, params, render, gpu: false, float: true }
+pub(super) fn spec(
+    id: &'static str,
+    name: &'static str,
+    declared: Declared,
+    cat: &'static str,
+    params: Vec<crate::ParamSpec>,
+    render: crate::RenderFn,
+) -> EffectSpec {
+    EffectSpec { id, name, category: cat, params, render, declared, float: true }
 }
 
 pub(super) fn space_param(id: &'static str, name: &'static str, default: u32) -> crate::ParamSpec {

@@ -9,10 +9,10 @@ use rayon::prelude::*;
 
 use crate::noise::fbm;
 use crate::util::{Plane, gauss_plane, guided_filter, hash1, join, layer_rect, lerp3, lerp4, morph_frac, premul, smoothstep, split, unpremul};
-use crate::{Buf, EffectCtx, EffectSpec, col, num, p, popup, slider};
+use crate::{Buf, Declared, EffectCtx, EffectSpec, TimeReach, Visual, col, num, p, popup, slider};
 
-fn spec(id: &'static str, name: &'static str, params: Vec<crate::ParamSpec>, render: crate::RenderFn) -> EffectSpec {
-    EffectSpec { id, name, category: "Stylize", params, render, gpu: false, float: true }
+fn spec(id: &'static str, name: &'static str, declared: Declared, params: Vec<crate::ParamSpec>, render: crate::RenderFn) -> EffectSpec {
+    EffectSpec { id, name, category: "Stylize", params, render, declared, float: true }
 }
 
 fn pct() -> ParamUi {
@@ -567,6 +567,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.stylize.cartoon",
             "Cartoon",
+            Declared::Filter(Visual::GPU),
             vec![
                 p("render", "Render", Value::Enum(2), popup(&["Fill", "Edges", "Fill & Edges"])),
                 p("detailRadius", "Detail Radius", num(8.0), slider(0.0, 50.0, 0.0, 50.0, 1)),
@@ -586,6 +587,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.stylize.roughenedges",
             "Roughen Edges",
+            Declared::Filter(Visual::GPU),
             vec![
                 p(
                     "edgeType",
@@ -611,6 +613,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.stylize.scatter",
             "Scatter",
+            Declared::Filter(Visual::GPU.time(TimeReach::Clock)),
             vec![
                 p("amount", "Scatter Amount", num(0.0), slider(0.0, 1000.0, 0.0, 127.0, 1)),
                 p("grain", "Grain", Value::Enum(0), popup(&["Both", "Horizontal", "Vertical"])),
@@ -621,6 +624,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.stylize.strobe",
             "Strobe Light",
+            Declared::Filter(Visual::GPU.time(TimeReach::Clock)),
             vec![
                 p("strobeColor", "Strobe Color", col(1.0, 1.0, 1.0), ParamUi::Color),
                 p("blendWithOriginal", "Blend With Original", num(0.0), pct()),
@@ -640,6 +644,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.stylize.texturize",
             "Texturize",
+            Declared::Filter(Visual::GPU),
             vec![
                 p("textureLayer", "Texture Layer", Value::Layer(None), ParamUi::Layer),
                 p("lightDirection", "Light Direction", num(135.0), ParamUi::Angle),
@@ -651,6 +656,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.stylize.brushstrokes",
             "Brush Strokes",
+            Declared::Filter(Visual::GPU),
             vec![
                 p("strokeAngle", "Stroke Angle", num(135.0), ParamUi::Angle),
                 p("brushSize", "Brush Size", num(2.0), slider(0.0, 5.0, 0.0, 5.0, 1)),
@@ -670,6 +676,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.stylize.cckaleida",
             "Kaleidoscope",
+            Declared::Filter(Visual::GPU),
             vec![
                 p("center", "Center", pt(0.5, 0.5), ParamUi::Point),
                 p("size", "Size", num(100.0), slider(1.0, 1000.0, 1.0, 400.0, 1)),
@@ -681,6 +688,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.stylize.ccrepetile",
             "Edge Tile Repeat",
+            Declared::Filter(Visual::GPU),
             vec![
                 p("expandRight", "Expand Right", num(0.0), slider(0.0, 4000.0, 0.0, 500.0, 0)),
                 p("expandLeft", "Expand Left", num(0.0), slider(0.0, 4000.0, 0.0, 500.0, 0)),
@@ -693,6 +701,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.stylize.motiontile",
             "Motion Tile",
+            Declared::Filter(Visual::GPU),
             vec![
                 p("tileCenter", "Tile Center", pt(0.5, 0.5), ParamUi::Point),
                 p("tileWidth", "Tile Width", num(100.0), slider(1.0, 1000.0, 1.0, 200.0, 1)),
@@ -708,6 +717,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.stylize.coloremboss",
             "Color Emboss",
+            Declared::Filter(Visual::GPU),
             vec![
                 p("direction", "Direction", num(45.0), ParamUi::Angle),
                 p("relief", "Relief", num(1.5), slider(0.0, 10.0, 0.0, 10.0, 2)),
@@ -719,6 +729,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.stylize.ccvignette",
             "Vignette",
+            Declared::Filter(Visual::GPU),
             vec![
                 p("amount", "Amount", num(50.0), slider(-100.0, 100.0, -100.0, 100.0, 1)),
                 p("angleOfView", "Angle of View", num(60.0), slider(0.0, 179.0, 0.0, 179.0, 1)),
@@ -730,6 +741,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.stylize.ccthreshold",
             "Channel Threshold",
+            Declared::Filter(Visual::GPU),
             vec![
                 p("threshold", "Threshold", num(127.0), thr()),
                 p("channel", "Channel", Value::Enum(0), popup(&["Luminance", "RGB", "Saturation", "Alpha"])),
@@ -741,6 +753,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.stylize.ccthresholdrgb",
             "RGB Threshold",
+            Declared::Filter(Visual::GPU),
             vec![
                 p("redThreshold", "Red Threshold", num(127.0), thr()),
                 p("greenThreshold", "Green Threshold", num(127.0), thr()),

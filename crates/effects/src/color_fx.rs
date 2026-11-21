@@ -4,10 +4,10 @@ use effectcraft_color::{hsl_to_rgb, luminance, rgb_to_hsl};
 use effectcraft_keyframe::Value;
 use effectcraft_project::ParamUi;
 
-use crate::{Buf, EffectCtx, EffectSpec, col, num, p, popup, slider};
+use crate::{Buf, Declared, EffectCtx, EffectSpec, Visual, col, num, p, popup, slider};
 
-fn spec(id: &'static str, name: &'static str, params: Vec<crate::ParamSpec>, render: crate::RenderFn) -> EffectSpec {
-    EffectSpec { id, name, category: "Color Correction", params, render, gpu: false, float: true }
+fn spec(id: &'static str, name: &'static str, declared: Declared, params: Vec<crate::ParamSpec>, render: crate::RenderFn) -> EffectSpec {
+    EffectSpec { id, name, category: "Color Correction", params, render, declared, float: true }
 }
 
 fn mix(a: [f32; 3], b: [f32; 3], t: f32) -> [f32; 3] {
@@ -953,6 +953,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.color.tint",
             "Tint",
+            Declared::Filter(Visual::GPU),
             vec![
                 p("black", "Map Black To", col(0.0, 0.0, 0.0), ParamUi::Color),
                 p("white", "Map White To", col(1.0, 1.0, 1.0), ParamUi::Color),
@@ -963,6 +964,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.color.tritone",
             "Tritone",
+            Declared::Filter(Visual::GPU),
             vec![
                 p("highlights", "Highlights", col(1.0, 1.0, 1.0), ParamUi::Color),
                 p("midtones", "Midtones", col(0.5, 0.4, 0.3), ParamUi::Color),
@@ -974,6 +976,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.color.brightnesscontrast",
             "Brightness & Contrast",
+            Declared::Filter(Visual::GPU),
             vec![
                 p("brightness", "Brightness", num(0.0), slider(-150.0, 150.0, -150.0, 150.0, 1)),
                 p("contrast", "Contrast", num(0.0), pct()),
@@ -984,6 +987,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.color.huesaturation",
             "Hue/Saturation",
+            Declared::Filter(Visual::GPU),
             {
                 let mut v = vec![
                     p("channelControl", "Channel Control", Value::Enum(0), popup(&HUESAT_CHANNELS)),
@@ -1015,6 +1019,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.color.levels",
             "Levels",
+            Declared::Filter(Visual::GPU),
             vec![
                 p("channel", "Channel", Value::Enum(0), popup(&LEVELS_CHANNELS)),
                 p("inBlack", "Input Black", num(0.0), slider(-1.0, 2.0, 0.0, 1.0, 3)),
@@ -1035,6 +1040,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.color.exposure",
             "Exposure",
+            Declared::Filter(Visual::GPU),
             {
                 let mut v = vec![p("channels", "Channels", Value::Enum(0), popup(&["Master", "Individual Channels"]))];
                 // After Effects' ranges (valid, slider, decimals). Gamma values below 0.1 from
@@ -1058,6 +1064,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.color.blackwhite",
             "Black & White",
+            Declared::Filter(Visual::GPU),
             vec![
                 p("reds", "Reds", num(40.0), slider(-200.0, 300.0, -200.0, 300.0, 0)),
                 p("yellows", "Yellows", num(60.0), slider(-200.0, 300.0, -200.0, 300.0, 0)),
@@ -1084,12 +1091,13 @@ pub fn specs() -> Vec<EffectSpec> {
                 p("opacity", "Opacity", num(100.0), slider(0.0, 100.0, 0.0, 100.0, 1)),
             ],
             render: fill,
-            gpu: false,
+            declared: Declared::Filter(Visual::GPU),
             float: true,
         },
         spec(
             "ec.color.changetocolor",
             "Change to Color",
+            Declared::Filter(Visual::GPU),
             vec![
                 p("from", "From", col(1.0, 0.0, 0.0), ParamUi::Color),
                 p("to", "To", col(0.0, 0.0, 1.0), ParamUi::Color),
@@ -1106,6 +1114,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.color.leavecolor",
             "Leave Color",
+            Declared::Filter(Visual::GPU),
             vec![
                 p("amount", "Amount to Decolor", num(0.0), slider(0.0, 100.0, 0.0, 100.0, 1)),
                 p("color", "Color To Leave", col(1.0, 0.0, 0.0), ParamUi::Color),
@@ -1118,6 +1127,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.color.photofilter",
             "Photo Filter",
+            Declared::Filter(Visual::GPU),
             vec![
                 p("filter", "Filter", Value::Enum(0), popup(&PHOTO_FILTERS.map(|f| f.0))),
                 p("color", "Color", col(0.93, 0.54, 0.09), ParamUi::Color),
@@ -1126,10 +1136,17 @@ pub fn specs() -> Vec<EffectSpec> {
             ],
             photo_filter,
         ),
-        spec("ec.color.vibrance", "Vibrance", vec![p("vibrance", "Vibrance", num(0.0), pct()), p("saturation", "Saturation", num(0.0), pct())], vibrance),
+        spec(
+            "ec.color.vibrance",
+            "Vibrance",
+            Declared::Filter(Visual::GPU),
+            vec![p("vibrance", "Vibrance", num(0.0), pct()), p("saturation", "Saturation", num(0.0), pct())],
+            vibrance,
+        ),
         spec(
             "ec.color.colorbalance",
             "Color Balance",
+            Declared::Filter(Visual::GPU),
             ["shadowRed", "shadowGreen", "shadowBlue", "midRed", "midGreen", "midBlue", "hiRed", "hiGreen", "hiBlue"]
                 .iter()
                 .zip([
@@ -1151,6 +1168,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.color.channelmixer",
             "Channel Mixer",
+            Declared::Filter(Visual::GPU),
             {
                 let ids = ["rr", "rg", "rb", "rc", "gr", "gg", "gb", "gc", "br", "bg", "bb", "bc"];
                 let names = [
@@ -1177,10 +1195,11 @@ pub fn specs() -> Vec<EffectSpec> {
             },
             channel_mixer,
         ),
-        spec("ec.color.gammapedestalgain", "Gamma/Pedestal/Gain", gpg, gamma_pg),
+        spec("ec.color.gammapedestalgain", "Gamma/Pedestal/Gain", Declared::Filter(Visual::GPU), gpg, gamma_pg),
         spec(
             "ec.color.colorama",
             "Colorama",
+            Declared::Filter(Visual::GPU),
             vec![
                 p("inputPhase/mode", "Get Phase From", Value::Enum(0), popup(&COLORAMA_PHASE)),
                 p("inputPhase/addPhase", "Add Phase", Value::Layer(None), ParamUi::Layer),

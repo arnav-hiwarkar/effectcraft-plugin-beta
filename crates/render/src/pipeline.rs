@@ -821,12 +821,12 @@ impl<'a> Renderer<'a> {
         // get the cover: they move content past the painted bounds without growing the buffer.
         let video = || {
             fx.groups().filter(|g| g.enabled).filter_map(|g| match &g.kind {
-                GroupKind::Effect { effect } => effectcraft_effects::find(effect).filter(|s| !effectcraft_effects::audio_fx::is_audio_effect(s.id)),
+                GroupKind::Effect { effect } => effectcraft_effects::find(effect).filter(|s| s.declared != effectcraft_effects::Declared::Audio),
                 _ => None,
             })
         };
         if !adjustment && video().next().is_some() {
-            if video().all(|s| s.skips_cover()) {
+            if video().all(|s| s.declared.visual().is_some_and(|v| v.cover == effectcraft_effects::Cover::OwnMargins)) {
                 target.align(layer_size);
             } else {
                 target.cover(layer_size);
@@ -872,7 +872,7 @@ impl<'a> Renderer<'a> {
                 GroupKind::Effect { effect } => effectcraft_effects::find(effect).map(|s| (i, g, s)),
                 _ => None,
             })
-            .filter(|(_, _, s)| !effectcraft_effects::audio_fx::is_audio_effect(s.id))
+            .filter(|(_, _, s)| s.declared != effectcraft_effects::Declared::Audio)
             .collect();
         let accel = self.active_accel();
         let mut k = 0;
@@ -880,10 +880,10 @@ impl<'a> Renderer<'a> {
             let (i, g, spec) = stack[k];
             // A run of GPU effects goes to the accelerator in one go.
             if let Some(a) = accel
-                && spec.gpu
+                && spec.declared.runs_on_gpu()
                 && a.supports_effect(spec.id)
             {
-                let run: Vec<_> = stack[k..].iter().take_while(|(_, _, s)| s.gpu && a.supports_effect(s.id)).collect();
+                let run: Vec<_> = stack[k..].iter().take_while(|(_, _, s)| s.declared.runs_on_gpu() && a.supports_effect(s.id)).collect();
                 let params: Vec<Params> = run.iter().map(|(_, g, _)| self.effect_params(ctx, layer, g)).collect();
                 let hosts: Vec<_> = run.iter().map(|(i, _, _)| FxHost { index: *i, ..host }).collect();
                 let steps: Vec<FxStep> = run

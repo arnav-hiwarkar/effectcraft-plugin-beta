@@ -37,7 +37,7 @@ pub(crate) fn deferred_gpu() -> Option<(&'static Gpu, std::sync::MutexGuard<'sta
 /// layer is blurred inside and outside (a chain whose input is another chain's result).
 pub(crate) fn scene() -> Scene {
     let cpu_only = "ec.generate.fractal";
-    assert!(!effectcraft_effects::GPU_EFFECTS.contains(&cpu_only));
+    assert_eq!(effectcraft_effects::declared(cpu_only).map(|d| d.runs_on_gpu()), Some(false));
     let mut s = Scene::new(BitDepth::Bpc32);
     let mut bg = s.footage(97, 61);
     s.effect(&mut bg, "ec.blur.gaussian", &[("blurriness", n(5.0))]);

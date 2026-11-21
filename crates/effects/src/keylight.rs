@@ -28,7 +28,7 @@ use effectcraft_raster::{Image, gaussian_blur};
 use rayon::prelude::*;
 
 use crate::util::{Plane, gauss_plane, morph_frac, point_in_poly, premul, unpremul};
-use crate::{Buf, EffectCtx, EffectSpec, col, num, p, popup, slider};
+use crate::{Buf, Declared, EffectCtx, EffectSpec, Visual, col, num, p, popup, slider};
 
 /// Other names the effect answers to in [`crate::lookup`].
 pub const KEYLIGHT_ALIASES: &[&str] = &["Keylight (1.2)", "Keylight", "Key Light"];
@@ -530,7 +530,7 @@ pub fn specs() -> Vec<EffectSpec> {
             pp("sourceCrops/cropBottom", "Bottom", pct(0.0)),
         ],
         render: key_light,
-        gpu: false,
+        declared: Declared::Filter(Visual::GPU),
         float: true,
     }]
 }

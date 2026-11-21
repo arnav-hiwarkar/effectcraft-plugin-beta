@@ -15,10 +15,17 @@ use rayon::prelude::*;
 
 use crate::generate3::{Seg, mask_px, poly_segs, raster_segs};
 use crate::util::{Plane, gauss_plane, hash1, poly_length, poly_point_at};
-use crate::{Buf, EffectCtx, EffectSpec, col, num, p, popup, slider};
+use crate::{Buf, Declared, EffectCtx, EffectSpec, TimeReach, Visual, col, num, p, popup, slider};
 
-fn spec(id: &'static str, name: &'static str, category: &'static str, params: Vec<crate::ParamSpec>, render: crate::RenderFn) -> EffectSpec {
-    EffectSpec { id, name, category, params, render, gpu: false, float: true }
+fn spec(
+    id: &'static str,
+    name: &'static str,
+    declared: Declared,
+    category: &'static str,
+    params: Vec<crate::ParamSpec>,
+    render: crate::RenderFn,
+) -> EffectSpec {
+    EffectSpec { id, name, category, params, render, declared, float: true }
 }
 
 fn pct() -> ParamUi {
@@ -929,6 +936,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.text.numbers",
             "Numbers",
+            Declared::Filter(Visual::GPU.time(TimeReach::Clock)),
             "Text",
             vec![
                 p(
@@ -967,6 +975,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.text.timecode",
             "Timecode",
+            Declared::Filter(Visual::GPU.time(TimeReach::Clock)),
             "Text",
             vec![
                 p("displayFormat", "Display Format", Value::Enum(0), popup(&["SMPTE HH:MM:SS:FF", "Frames", "Feet + Frames (35mm)", "Feet + Frames (16mm)"])),
@@ -987,6 +996,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.obsolete.basictext",
             "Basic Text",
+            Declared::Filter(Visual::GPU),
             "Obsolete",
             vec![
                 p("text", "Text", Value::Str("Text".into()), ParamUi::Text),
@@ -1006,6 +1016,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.obsolete.pathtext",
             "Path Text",
+            Declared::Filter(Visual::GPU.time(TimeReach::Clock)),
             "Obsolete",
             vec![
                 p("text", "Text", Value::Str("Text".into()), ParamUi::Text),
@@ -1047,6 +1058,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.obsolete.lightning",
             "Lightning",
+            Declared::Filter(Visual::GPU.time(TimeReach::Clock)),
             "Obsolete",
             vec![
                 p("startPoint", "Start Point", pt(0.1, 0.5), ParamUi::Point),

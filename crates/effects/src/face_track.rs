@@ -13,7 +13,7 @@ use effectcraft_keyframe::Value;
 use effectcraft_project::ParamUi;
 use effectcraft_track::face::{LANDMARKS, MEASUREMENTS};
 
-use crate::{Buf, EffectCtx, EffectSpec, ParamSpec, num, p, slider};
+use crate::{Buf, Declared, EffectCtx, EffectSpec, ParamSpec, Visual, num, p, slider};
 
 /// Effect ids.
 pub const POINTS_ID: &str = "ec.utility.facetrackpoints";
@@ -39,7 +39,23 @@ pub fn specs() -> Vec<EffectSpec> {
         .collect();
     let measurements: Vec<ParamSpec> = MEASUREMENTS.iter().map(|(id, name)| p(id, name, num(0.0), measurement_ui(id))).collect();
     vec![
-        EffectSpec { id: POINTS_ID, name: "Face Track Points", category: "Utility", params: points, render: passthrough, gpu: false, float: true },
-        EffectSpec { id: MEASUREMENTS_ID, name: "Face Measurements", category: "Utility", params: measurements, render: passthrough, gpu: false, float: true },
+        EffectSpec {
+            id: POINTS_ID,
+            name: "Face Track Points",
+            category: "Utility",
+            params: points,
+            render: passthrough,
+            declared: Declared::Filter(Visual::CPU),
+            float: true,
+        },
+        EffectSpec {
+            id: MEASUREMENTS_ID,
+            name: "Face Measurements",
+            category: "Utility",
+            params: measurements,
+            render: passthrough,
+            declared: Declared::Filter(Visual::CPU),
+            float: true,
+        },
     ]
 }

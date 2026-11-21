@@ -1,7 +1,8 @@
 use super::{EffectSpec, ParamUi, Value, hash1, slider};
+use crate::Declared;
 
-pub(crate) fn spec(id: &'static str, name: &'static str, params: Vec<crate::ParamSpec>, render: crate::RenderFn) -> EffectSpec {
-    EffectSpec { id, name, category: "Simulation", params, render, gpu: false, float: true }
+pub(crate) fn spec(id: &'static str, name: &'static str, declared: Declared, params: Vec<crate::ParamSpec>, render: crate::RenderFn) -> EffectSpec {
+    EffectSpec { id, name, category: "Simulation", params, render, declared, float: true }
 }
 
 pub(crate) fn pt(x: f64, y: f64) -> Value {

@@ -6,13 +6,20 @@ use effectcraft_project::ParamUi;
 use effectcraft_raster::Px;
 use rayon::prelude::*;
 
-use crate::{Buf, EffectCtx, EffectSpec, col, num, p, popup, slider};
+use crate::{Buf, Declared, EffectCtx, EffectSpec, Visual, col, num, p, popup, slider};
 
 /// Checkerboard / Grid "Size From" options.
 pub(crate) const SIZE_FROM: [&str; 3] = ["Corner Point", "Width Slider", "Width & Height Sliders"];
 
-fn spec(id: &'static str, name: &'static str, category: &'static str, params: Vec<crate::ParamSpec>, render: crate::RenderFn) -> EffectSpec {
-    EffectSpec { id, name, category, params, render, gpu: false, float: true }
+fn spec(
+    id: &'static str,
+    name: &'static str,
+    declared: Declared,
+    category: &'static str,
+    params: Vec<crate::ParamSpec>,
+    render: crate::RenderFn,
+) -> EffectSpec {
+    EffectSpec { id, name, category, params, render, declared, float: true }
 }
 
 /// Blend a generated straight colour `g` (with alpha `ga`) over the original pixel.
@@ -346,6 +353,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.generate.gradientramp",
             "Gradient Ramp",
+            Declared::Filter(Visual::GPU),
             "Generate",
             vec![
                 p("start", "Start of Ramp", pt(0.5, 0.0), ParamUi::Point),
@@ -361,6 +369,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.generate.fourcolor",
             "4-Color Gradient",
+            Declared::Filter(Visual::GPU),
             "Generate",
             vec![
                 p("positionsColors/point1", "Point 1", pt(0.1, 0.1), ParamUi::Point),
@@ -382,6 +391,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.generate.checkerboard",
             "Checkerboard",
+            Declared::Filter(Visual::GPU),
             "Generate",
             vec![
                 p("anchor", "Anchor", pt(0.0, 0.0), ParamUi::Point),
@@ -400,6 +410,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.generate.grid",
             "Grid",
+            Declared::Filter(Visual::GPU),
             "Generate",
             vec![
                 p("anchor", "Anchor", pt(0.0, 0.0), ParamUi::Point),
@@ -420,6 +431,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.generate.circle",
             "Circle",
+            Declared::Filter(Visual::GPU),
             "Generate",
             vec![
                 p("center", "Center", pt(0.5, 0.5), ParamUi::Point),

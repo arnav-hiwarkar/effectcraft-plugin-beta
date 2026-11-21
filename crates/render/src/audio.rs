@@ -18,8 +18,7 @@
 //! with the start at the out point (After Effects' layout) it is the exact mirror of the
 //! layer's span. Backwards on a reversed layer plays it forwards again.
 
-use effectcraft_effects::Params;
-use effectcraft_effects::audio_fx;
+use effectcraft_effects::{Declared, Params, audio_fx};
 use effectcraft_project::{Comp, GroupKind, ItemId, ItemKind, Layer, LayerSource, Node, Project};
 use effectcraft_time::{TICKS_PER_SECOND, Tick};
 
@@ -84,7 +83,7 @@ pub fn comp_has_audio(project: &Project, comp: ItemId) -> bool {
 /// Enabled audio effects of a layer (in stack order) with their effect ids.
 fn audio_effect_groups(l: &Layer) -> impl Iterator<Item = (&str, &effectcraft_project::PropGroup)> {
     l.effects().filter(|_| l.switches.effects).into_iter().flat_map(|fx| fx.groups()).filter(|g| g.enabled).filter_map(|g| match &g.kind {
-        GroupKind::Effect { effect } if audio_fx::is_audio_effect(effect) => Some((effect.as_str(), g)),
+        GroupKind::Effect { effect } if effectcraft_effects::declared(effect) == Some(Declared::Audio) => Some((effect.as_str(), g)),
         _ => None,
     })
 }

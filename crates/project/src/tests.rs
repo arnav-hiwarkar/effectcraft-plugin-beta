@@ -93,8 +93,8 @@ fn comp_resolution_is_saved_and_old_projects_load_with_auto() {
     assert_eq!(Project::from_json(&old.to_string()).unwrap().comp(cid).unwrap().resolution, Resolution::Auto);
     // It's not part of the comp's pixels.
     let (a, b) = (p.comp(cid).unwrap(), q.comp(cid).unwrap());
-    assert!(a != b && a.same_pixels(b));
-    assert_eq!(format!("{:?}", a.pixel_form()), format!("{:?}", b.pixel_form()));
+    assert!(a != b && a.same_pixels(b, declared));
+    assert_eq!(format!("{:?}", a.pixel_form(declared)), format!("{:?}", b.pixel_form(declared)));
 }
 
 #[test]
@@ -495,15 +495,6 @@ fn silent_layers_are_music_and_unread_hidden_layers() {
     }
 }
 
-/// Plug-in effects read their input at other times (plug-in API 2), so a precomp under one is
-/// re-rendered over its whole span; built-in effects only when they are on the list.
-#[test]
-fn plug_in_effects_read_other_frames() {
-    assert!(crate::reads_other_frames("org.example.glow"));
-    assert!(crate::reads_other_frames("ec.time.echo"));
-    assert!(!crate::reads_other_frames("ec.blur.gaussian"));
-}
-
 /// An item whose parent is a composition (or an item that is not there) lists under no folder, and
 /// the AEP export lost it without a word (review finding): opening such a file moves it to the top
 /// level and says so; a parent that is a folder stays.
@@ -576,6 +567,39 @@ fn add_effect(l: &mut crate::Layer, fx: crate::PropGroup) {
     l.props.sub_mut("effects").unwrap().children.push(fx.into());
 }
 
+fn declared(id: &str) -> Option<crate::Declared> {
+    match id {
+        "ec.time.echo" => Some(crate::Declared::Filter(crate::Visual::CPU.time(crate::TimeReach::OtherTimesUnkeyed))),
+        "ec.color.autolevels" => Some(crate::Declared::Filter(crate::Visual::CPU.time(crate::TimeReach::ClockAndOtherFrames))),
+        "ec.noise.noise" => Some(crate::Declared::Filter(crate::Visual::CPU.time(crate::TimeReach::Clock))),
+        "ec.audio.delay" => Some(crate::Declared::Audio),
+        "org.example.missing" => None,
+        _ => Some(crate::Declared::Filter(crate::Visual::CPU)),
+    }
+}
+
+#[test]
+fn an_effect_key_edit_reaches_as_far_as_the_effect_declares() {
+    let spans = |id: &str| {
+        let (a, b) = middle_key_edit(
+            |ids, l| {
+                let amount = ids.prop("amount", "Amount", Value::Scalar(0.0));
+                add_effect(l, effect(ids, id, vec![amount]));
+            },
+            "effects/#1/amount",
+            scalars([0.0, 1.0, 0.0]),
+            Value::Scalar(2.0),
+        );
+        b.keyframe_spans(&a, true, false, declared)
+    };
+    assert_eq!(spans("ec.blur.gaussian"), first_to_last_key());
+    assert_eq!(spans("ec.noise.noise"), first_to_last_key());
+    assert_eq!(spans("ec.time.echo"), None);
+    assert_eq!(spans("ec.color.autolevels"), None);
+    assert_eq!(spans("org.example.missing"), None);
+    assert_eq!(spans("ec.audio.delay"), Some(vec![]));
+}
+
 fn scalars(v: [f64; 3]) -> [Value; 3] {
     v.map(Value::Scalar)
 }
@@ -585,8 +609,8 @@ fn scalars(v: [f64; 3]) -> [Value; 3] {
 #[test]
 fn an_effect_key_edit_reaches_only_its_keys() {
     let (a, b) = middle_key_edit(|ids, l| add_effect(l, exposure(ids)), "effects/#1/master/exposure", scalars([0.0, 1.0, 0.0]), Value::Scalar(2.0));
-    assert_eq!(b.keyframe_spans(&a, true, false), first_to_last_key());
-    assert_eq!(a.keyframe_spans(&b, true, false), first_to_last_key());
+    assert_eq!(b.keyframe_spans(&a, true, false, declared), first_to_last_key());
+    assert_eq!(a.keyframe_spans(&b, true, false, declared), first_to_last_key());
 }
 
 /// A key edit on a mask's path (a shape value) keeps the frames outside its keys (#3324).
@@ -602,7 +626,7 @@ fn a_mask_path_key_edit_reaches_only_its_keys() {
         [path(10.0), path(20.0), path(10.0)],
         path(40.0),
     );
-    assert_eq!(b.keyframe_spans(&a, true, false), first_to_last_key());
+    assert_eq!(b.keyframe_spans(&a, true, false, declared), first_to_last_key());
 }
 
 /// A key edit on a shape's path inside a shape group keeps the frames outside its keys (#3324).
@@ -620,7 +644,7 @@ fn a_shape_path_key_edit_reaches_only_its_keys() {
         [path(10.0), path(20.0), path(10.0)],
         path(40.0),
     );
-    assert_eq!(b.keyframe_spans(&a, true, false), first_to_last_key());
+    assert_eq!(b.keyframe_spans(&a, true, false, declared), first_to_last_key());
 }
 
 /// A key edit on a text animator's property keeps the frames outside its keys, and so does one
@@ -635,10 +659,10 @@ fn text_key_edits_reach_only_their_keys() {
         l.props.children.push(t.into());
     };
     let (a, b) = middle_key_edit(text, "text/animators/animator#1/properties/opacity", scalars([100.0, 0.0, 100.0]), Value::Scalar(50.0));
-    assert_eq!(b.keyframe_spans(&a, true, false), first_to_last_key());
+    assert_eq!(b.keyframe_spans(&a, true, false, declared), first_to_last_key());
     let doc = |s: &str| Value::Text(Box::new(effectcraft_keyframe::TextDoc::plain(s)));
     let (a, b) = middle_key_edit(text, "text/sourceText", [doc("a"), doc("b"), doc("c")], doc("B"));
-    assert_eq!(b.keyframe_spans(&a, true, false), first_to_last_key());
+    assert_eq!(b.keyframe_spans(&a, true, false, declared), first_to_last_key());
 }
 
 /// An expression anywhere on the layer can read the keyed property at other times: an effect key
@@ -654,7 +678,7 @@ fn an_expression_elsewhere_on_the_layer_keeps_the_whole_span() {
         scalars([0.0, 1.0, 0.0]),
         Value::Scalar(2.0),
     );
-    assert_eq!(b.keyframe_spans(&a, true, false), None);
+    assert_eq!(b.keyframe_spans(&a, true, false, declared), None);
 }
 
 /// A change of the tree's structure reaches the layer's whole span: an effect added (even beside
@@ -664,13 +688,13 @@ fn an_effect_added_or_switched_off_keeps_the_whole_span() {
     let (a, b) = middle_key_edit(|ids, l| add_effect(l, exposure(ids)), "effects/#1/master/exposure", scalars([0.0, 1.0, 0.0]), Value::Scalar(2.0));
     let mut added = a.clone();
     add_effect(&mut added, effect(&mut Ids(&mut 10_000), "ec.channel.invert", vec![]));
-    assert_eq!(added.keyframe_spans(&a, true, false), None);
+    assert_eq!(added.keyframe_spans(&a, true, false, declared), None);
     let mut both = b.clone();
     add_effect(&mut both, effect(&mut Ids(&mut 10_000), "ec.channel.invert", vec![]));
-    assert_eq!(both.keyframe_spans(&a, true, false), None);
+    assert_eq!(both.keyframe_spans(&a, true, false, declared), None);
     let mut off = b.clone();
     off.props.group_mut("effects/#1").unwrap().enabled = false;
-    assert_eq!(off.keyframe_spans(&a, true, false), None);
+    assert_eq!(off.keyframe_spans(&a, true, false, declared), None);
 }
 
 /// Effects that read their own parameters at other times (Write-on's dabs since the layer's
@@ -684,13 +708,13 @@ fn effects_reading_their_parameters_elsewhen_keep_the_whole_span() {
         effect(ids, "ec.generate.writeon", vec![p])
     };
     let (a, b) = middle_key_edit(|ids, l| add_effect(l, write_on(ids)), "effects/#1/brushPosition", [v2(0.0), v2(5.0), v2(0.0)], v2(9.0));
-    assert_eq!(b.keyframe_spans(&a, true, false), None);
+    assert_eq!(b.keyframe_spans(&a, true, false, declared), None);
     let radio = |ids: &mut Ids| {
         let p = ids.prop("producePoint", "Producer Point", v2(0.0));
         effect(ids, "ec.generate.radiowaves", vec![p])
     };
     let (a, b) = middle_key_edit(|ids, l| add_effect(l, radio(ids)), "effects/#1/producePoint", [v2(0.0), v2(5.0), v2(0.0)], v2(9.0));
-    assert_eq!(b.keyframe_spans(&a, true, false), None);
+    assert_eq!(b.keyframe_spans(&a, true, false, declared), None);
     // Transform: its own Shutter Angle reaches past the comp's shutter, the comp's doesn't unless
     // the layer is stretched (Transform samples its shutter in layer time).
     for (comp_shutter, stretch, want) in [(false, 100.0, None), (true, 100.0, first_to_last_key()), (true, 200.0, None)] {
@@ -702,7 +726,7 @@ fn effects_reading_their_parameters_elsewhen_keep_the_whole_span() {
         };
         let (a, b) = middle_key_edit(transform, "effects/#1/rotation", scalars([0.0, 10.0, 0.0]), Value::Scalar(20.0));
         let want = want.map(|_| vec![(a.comp_time(Tick::from_seconds_f64(1.0)), a.comp_time(Tick::from_seconds_f64(3.0)))]);
-        assert_eq!(b.keyframe_spans(&a, true, false), want, "comp shutter {comp_shutter}, stretch {stretch}");
+        assert_eq!(b.keyframe_spans(&a, true, false, declared), want, "comp shutter {comp_shutter}, stretch {stretch}");
     }
     // Another effect's key edit beside a Write-on.
     let (a, b) = middle_key_edit(
@@ -714,7 +738,7 @@ fn effects_reading_their_parameters_elsewhen_keep_the_whole_span() {
         scalars([0.0, 1.0, 0.0]),
         Value::Scalar(2.0),
     );
-    assert_eq!(b.keyframe_spans(&a, true, false), first_to_last_key());
+    assert_eq!(b.keyframe_spans(&a, true, false, declared), first_to_last_key());
 }
 
 /// The Essential Properties feed a nested comp, and audio something draws (a waveform reads a
@@ -732,15 +756,15 @@ fn essential_properties_and_heard_audio_keep_the_whole_span() {
         scalars([0.0, 1.0, 0.0]),
         Value::Scalar(2.0),
     );
-    assert_eq!(b.keyframe_spans(&a, true, false), None);
+    assert_eq!(b.keyframe_spans(&a, true, false, declared), None);
     let (a, b) = middle_key_edit(
         |ids, l| l.props.children.push(build::audio(ids).into()),
         "audio/levels",
         [Value::Vec2([0.0; 2]), Value::Vec2([-6.0; 2]), Value::Vec2([0.0; 2])],
         Value::Vec2([-12.0; 2]),
     );
-    assert_eq!(b.keyframe_spans(&a, true, true), None, "heard");
-    assert_eq!(b.keyframe_spans(&a, true, false), Some(vec![]), "not heard: the picture is the same");
+    assert_eq!(b.keyframe_spans(&a, true, true, declared), None, "heard");
+    assert_eq!(b.keyframe_spans(&a, true, false, declared), Some(vec![]), "not heard: the picture is the same");
 }
 
 /// A property tree nested deeper than the walk goes counts as changed everywhere (#3324).
@@ -763,10 +787,10 @@ fn a_deeply_nested_key_edit_keeps_the_whole_span() {
     let (mut a, mut b) = (p.comp(cid).unwrap().layers[0].clone(), p.comp(cid).unwrap().layers[0].clone());
     a.props.children.push(deep(1.0).into());
     b.props.children.push(deep(2.0).into());
-    assert_eq!(b.keyframe_spans(&a, true, false), None);
+    assert_eq!(b.keyframe_spans(&a, true, false, declared), None);
     // (a Transform key edit beside the same deep tree keeps its span)
     let (a, b) = middle_key_edit(|_, l| l.props.children.push(deep(1.0).into()), "transform/opacity", scalars([100.0, 0.0, 100.0]), Value::Scalar(50.0));
-    assert_eq!(b.keyframe_spans(&a, true, false), first_to_last_key());
+    assert_eq!(b.keyframe_spans(&a, true, false, declared), first_to_last_key());
 }
 
 /// On a reversed layer (negative stretch) the first keys play last: an edit of the first key
@@ -778,7 +802,7 @@ fn a_first_key_edit_on_a_reversed_layer_reaches_the_out_point() {
     let (a, _) = middle_key_edit(reversed, "transform/opacity", scalars([100.0, 0.0, 100.0]), Value::Scalar(0.0));
     let mut b = a.clone();
     b.props.prop_mut("transform/opacity").unwrap().keys[0].value = Value::Scalar(50.0);
-    let spans = b.keyframe_spans(&a, true, false).unwrap();
+    let spans = b.keyframe_spans(&a, true, false, declared).unwrap();
     let (s, e) = spans[0];
     assert_eq!(spans.len(), 1);
     // Keys at layer 1, 2, 3 s show at 9, 8, 7 s; the first key's edit reaches 7 s (its second key
@@ -793,9 +817,9 @@ fn a_first_key_edit_on_a_reversed_layer_reaches_the_out_point() {
 fn properties_the_renderer_reads_elsewhen_keep_the_whole_span() {
     let v3 = |x: f64| Value::Vec3([x, 0.0, 0.0]);
     let (a, b) = middle_key_edit(|_, l| l.auto_orient = crate::AutoOrient::AlongPath, "transform/position", [v3(0.0), v3(5.0), v3(9.0)], v3(2.0));
-    assert_eq!(b.keyframe_spans(&a, true, false), None);
+    assert_eq!(b.keyframe_spans(&a, true, false, declared), None);
     let (a, b) = middle_key_edit(|_, _| {}, "transform/position", [v3(0.0), v3(5.0), v3(9.0)], v3(2.0));
-    assert_eq!(b.keyframe_spans(&a, true, false), first_to_last_key(), "without Auto-Orient");
+    assert_eq!(b.keyframe_spans(&a, true, false, declared), first_to_last_key(), "without Auto-Orient");
     let (a, b) = middle_key_edit(
         |ids, l| {
             let g = ids.group("geometryOptions", "Geometry Options").with(ids.prop("animation", "Animation", Value::Enum(0)));
@@ -805,5 +829,5 @@ fn properties_the_renderer_reads_elsewhen_keep_the_whole_span() {
         [Value::Enum(0), Value::Enum(1), Value::Enum(1)],
         Value::Enum(0),
     );
-    assert_eq!(b.keyframe_spans(&a, true, false), None);
+    assert_eq!(b.keyframe_spans(&a, true, false, declared), None);
 }

@@ -9,10 +9,10 @@ use effectcraft_raster::Image;
 use rayon::prelude::*;
 
 use crate::util::{Plane, gauss_plane, lerp3, premul, unpremul};
-use crate::{Buf, EffectCtx, EffectSpec, col, num, p, popup, slider};
+use crate::{Buf, Declared, EffectCtx, EffectSpec, TimeReach, Visual, col, num, p, popup, slider};
 
-fn spec(id: &'static str, name: &'static str, params: Vec<crate::ParamSpec>, render: crate::RenderFn) -> EffectSpec {
-    EffectSpec { id, name, category: "Color Correction", params, render, gpu: false, float: true }
+fn spec(id: &'static str, name: &'static str, declared: Declared, params: Vec<crate::ParamSpec>, render: crate::RenderFn) -> EffectSpec {
+    EffectSpec { id, name, category: "Color Correction", params, render, declared, float: true }
 }
 
 fn pct() -> ParamUi {
@@ -1028,6 +1028,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.color.curves",
             "Curves",
+            Declared::Filter(Visual::GPU),
             vec![
                 // The channel the graph edits (the Effect Controls graph's Channel popup).
                 p("channel", "Channel", Value::Enum(0), ParamUi::Hidden),
@@ -1039,13 +1040,14 @@ pub fn specs() -> Vec<EffectSpec> {
             ],
             curves,
         ),
-        spec("ec.color.levelsic", "Levels (Individual Controls)", lv_params, levels_ic),
-        spec("ec.color.autolevels", "Auto Levels", clip_params(false), auto_levels),
-        spec("ec.color.autocontrast", "Auto Contrast", clip_params(false), auto_contrast),
-        spec("ec.color.autocolor", "Auto Color", clip_params(true), auto_color),
+        spec("ec.color.levelsic", "Levels (Individual Controls)", Declared::Filter(Visual::GPU), lv_params, levels_ic),
+        spec("ec.color.autolevels", "Auto Levels", Declared::Filter(Visual::GPU.time(TimeReach::OtherTimesUnkeyed)), clip_params(false), auto_levels),
+        spec("ec.color.autocontrast", "Auto Contrast", Declared::Filter(Visual::GPU.time(TimeReach::OtherTimesUnkeyed)), clip_params(false), auto_contrast),
+        spec("ec.color.autocolor", "Auto Color", Declared::Filter(Visual::GPU.time(TimeReach::OtherTimesUnkeyed)), clip_params(true), auto_color),
         spec(
             "ec.color.equalize",
             "Equalize",
+            Declared::Filter(Visual::GPU),
             vec![
                 p("style", "Equalize", Value::Enum(0), popup(&["RGB", "Brightness", "Photoshop Style"])),
                 p("amount", "Amount to Equalize", num(100.0), slider(0.0, 100.0, 0.0, 100.0, 1)),
@@ -1055,6 +1057,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.color.shadowhighlight",
             "Shadow/Highlight",
+            Declared::Filter(Visual::GPU.time(TimeReach::OtherTimesUnkeyed)),
             vec![
                 p("autoAmounts", "Auto Amounts", Value::Bool(true), ParamUi::Checkbox),
                 p("shadowAmount", "Shadow Amount", num(50.0), slider(0.0, 100.0, 0.0, 100.0, 0)),
@@ -1073,16 +1076,18 @@ pub fn specs() -> Vec<EffectSpec> {
             ],
             shadow_highlight,
         ),
-        spec("ec.color.selectivecolor", "Selective Color", sc_params, selective_color),
+        spec("ec.color.selectivecolor", "Selective Color", Declared::Filter(Visual::GPU), sc_params, selective_color),
         spec(
             "ec.color.colorbalancehls",
             "Color Balance (HLS)",
+            Declared::Filter(Visual::GPU),
             vec![p("hue", "Hue", num(0.0), ParamUi::Angle), p("lightness", "Lightness", num(0.0), pct()), p("saturation", "Saturation", num(0.0), pct())],
             color_balance_hls,
         ),
         spec(
             "ec.color.colorlink",
             "Color Link",
+            Declared::Filter(Visual::GPU),
             vec![
                 p("sourceLayer", "Source Layer", Value::Layer(None), ParamUi::Layer),
                 // A chosen source layer is sampled without its masks and effects.
@@ -1098,6 +1103,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.color.broadcast",
             "Broadcast Colors",
+            Declared::Filter(Visual::GPU),
             vec![
                 p("locale", "Broadcast Locale", Value::Enum(0), popup(&["NTSC", "PAL"])),
                 p(
@@ -1113,6 +1119,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.color.cctoner",
             "Multi-Tone Tint",
+            Declared::Filter(Visual::GPU),
             vec![
                 p("tones", "Tones", Value::Enum(1), popup(&["Duotone", "Tritone", "Pentone"])),
                 p("highlights", "Highlights", col(1.0, 1.0, 1.0), ParamUi::Color),
@@ -1127,6 +1134,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.color.cccoloroffset",
             "Channel Offset",
+            Declared::Filter(Visual::GPU),
             vec![
                 p("redPhase", "Red Phase", num(0.0), ParamUi::Angle),
                 p("greenPhase", "Green Phase", num(0.0), ParamUi::Angle),
@@ -1135,7 +1143,7 @@ pub fn specs() -> Vec<EffectSpec> {
             ],
             cc_color_offset,
         ),
-        spec("ec.color.cckernel", "Convolution Kernel", k_params, cc_kernel),
+        spec("ec.color.cckernel", "Convolution Kernel", Declared::Filter(Visual::GPU), k_params, cc_kernel),
     ]
 }
 

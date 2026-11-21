@@ -2077,11 +2077,11 @@ fn comp_content_key_for_renderer(project: &effectcraft_project::Project, comp: e
                 let quiet = silent(id, c);
                 let heard = |l| heard.contains(id, l);
                 if quiet.is_empty() {
-                    hash_debug(&mut h, &c.pixel_form_with(expressions, &heard));
+                    hash_debug(&mut h, &c.pixel_form_with(expressions, &heard, effectcraft_effects::declared));
                 } else {
                     let mut pic = (**c).clone();
                     pic.layers.retain(|l| !quiet.contains(&l.id));
-                    hash_debug(&mut h, &pic.pixel_form_with(expressions, &heard));
+                    hash_debug(&mut h, &pic.pixel_form_with(expressions, &heard, effectcraft_effects::declared));
                 }
             }
             k => hash_debug(&mut h, k),

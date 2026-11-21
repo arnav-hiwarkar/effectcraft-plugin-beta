@@ -13,10 +13,10 @@ use rayon::prelude::*;
 
 use crate::noise::fbm;
 use crate::util::{Plane, gauss_plane, layer_or_self, lerp4, premul, smoothstep, unpremul};
-use crate::{Buf, EffectCtx, EffectSpec, col, num, p, popup, slider};
+use crate::{Buf, Declared, EffectCtx, EffectSpec, Visual, col, num, p, popup, slider};
 
-fn spec(id: &'static str, name: &'static str, params: Vec<crate::ParamSpec>, render: crate::RenderFn) -> EffectSpec {
-    EffectSpec { id, name, category: "Stylize", params, render, gpu: false, float: true }
+fn spec(id: &'static str, name: &'static str, declared: Declared, params: Vec<crate::ParamSpec>, render: crate::RenderFn) -> EffectSpec {
+    EffectSpec { id, name, category: "Stylize", params, render, declared, float: true }
 }
 
 fn pct() -> ParamUi {
@@ -519,6 +519,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.stylize.ccblockload",
             "Block Reveal",
+            Declared::Filter(Visual::GPU),
             vec![
                 p("completion", "Completion", num(0.0), pct()),
                 p("scanlines", "Scanlines", Value::Bool(true), ParamUi::Checkbox),
@@ -531,6 +532,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.stylize.ccburnfilm",
             "Film Burn",
+            Declared::Filter(Visual::GPU),
             vec![
                 p("burn", "Burn", num(0.0), pct()),
                 p("center", "Center", pt(0.5, 0.5), ParamUi::Point),
@@ -538,10 +540,11 @@ pub fn specs() -> Vec<EffectSpec> {
             ],
             burn_film,
         ),
-        spec("ec.stylize.ccglass", "Glass Relief", glass_p, glass),
+        spec("ec.stylize.ccglass", "Glass Relief", Declared::Filter(Visual::GPU), glass_p, glass),
         spec(
             "ec.stylize.cchextile",
             "Hexagonal Tiles",
+            Declared::Filter(Visual::GPU),
             vec![
                 p("render", "Render", Value::Enum(0), popup(&["Normal", "Mirrored", "Rotated"])),
                 p("radius", "Radius", num(50.0), slider(1.0, 4000.0, 2.0, 500.0, 1)),
@@ -554,6 +557,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.stylize.ccmrsmoothie",
             "Palette Map",
+            Declared::Filter(Visual::GPU),
             vec![
                 p("flowLayer", "Flow Layer", Value::Layer(None), ParamUi::Layer),
                 p("property", "Property", Value::Enum(4), popup(&SMOOTHIE_PROPS)),
@@ -565,7 +569,7 @@ pub fn specs() -> Vec<EffectSpec> {
             ],
             smoothie,
         ),
-        spec("ec.stylize.ccplastic", "Plastic Shading", plastic_p, plastic),
+        spec("ec.stylize.ccplastic", "Plastic Shading", Declared::Filter(Visual::GPU), plastic_p, plastic),
     ]
 }
 
