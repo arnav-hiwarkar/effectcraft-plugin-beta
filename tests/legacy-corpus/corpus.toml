@@ -1,0 +1,116 @@
+[[member]]
+name = "gain-effect"
+kind = "wasm-abi1"
+app = "effectcraft"
+expect = "ABI 1 org.example.corpus.gain loads from .wasm and from .wat text and multiplies colour by gain, 1 by default"
+files = [
+    { path = "gain.wasm", sha256 = "7724cc1d1ea3a3250df26afd808cf4fe136ee71a7b8d0fedb5f01cd834f15177" },
+    { path = "gain.wat", sha256 = "8407edba7e5e7e060028e32650ada145e3db50d7ba46ef6c9e629806d3164aef" },
+]
+
+[[member]]
+name = "library-mismatch"
+kind = "library-mismatch"
+app = "effectcraft"
+expect = "library.loadInstalled refuses org.example.corpus.tampered because installed.json lists another sha256"
+files = [
+    { path = "Plug-ins/Library/catalog.json", sha256 = "217fae383ad0c34941d3d06cd9deed6d1f34eae41fe91fd1be6748e49650423d" },
+    { path = "Plug-ins/Library/installed.json", sha256 = "b6b7f200c2581de0d36f2b8f26fb68acc93f94edf0272024d7b35aecd21b96bb" },
+    { path = "Plug-ins/Library/org.example.corpus.tampered/1.0.0/org.example.corpus.tampered.wasm", sha256 = "6cc7587ef5745bd2e332b331f2d1455ceee647dd23fd0609ed3be5667d58e6ae" },
+]
+
+[[member]]
+name = "library-verified"
+kind = "library-verified"
+app = "effectcraft"
+expect = "library.loadInstalled loads org.example.corpus.library 1.0.0 after its sha256 matches, and library.list reads catalog.json without fetching"
+files = [
+    { path = "Plug-ins/Library/catalog.json", sha256 = "360de3847f4dff6bd22a5b3a3b8deeea13acee9ae95cb0bf83e32bd2e784a6db" },
+    { path = "Plug-ins/Library/installed.json", sha256 = "9f867dfb453d8a6ac1e293f091bd9ea629ff238918de0aac899749f89e555a77" },
+    { path = "Plug-ins/Library/org.example.corpus.library/1.0.0/org.example.corpus.library.wasm", sha256 = "18b36c99174ccc1911e940539d363dcc4fbc91555cd568839380be9f2ecdb516" },
+]
+
+[[member]]
+name = "missing-effect-project"
+kind = "plugin-missing"
+app = "effectcraft"
+expect = "the effect org.example.corpus.absent is kept through save, renders as the bare solid, and library.missing lists it"
+files = [
+    { path = "project.ecproj", sha256 = "7c1c3dfc642f72243e19f1f54f65f02dc0a301f709060445620bb673882cdbe2" },
+]
+
+[[member]]
+name = "neighbours-effect"
+kind = "wasm-abi2"
+app = "effectcraft"
+expect = "ABI 2 org.example.corpus.neighbours writes the previous frame's red, the neighbour flags over 4 and the next frame's red"
+files = [
+    { path = "neighbours.wasm", sha256 = "6927e894a12160b4aef93927cd36238b6956b5ca39061d0089d99a4e43f8f504" },
+    { path = "neighbours.wat", sha256 = "a36a2cab1f104725f751f2089734532ca70a50dccc1992da0da087f66fff1426" },
+]
+
+[[member]]
+name = "plugins-dir"
+kind = "plugins-dir"
+app = "effectcraft"
+expect = "effect.plugins.load on the Plug-ins folder loads org.example.corpus.folder and reports not-a-module.wasm"
+files = [
+    { path = "Plug-ins/corpus-folder.wasm", sha256 = "daf2aa5a7f4d4173623bb022930d3fe98dbc9f6518b31125172eff53db68f932" },
+    { path = "Plug-ins/not-a-module.wasm", sha256 = "93cd816056f28ae55b76347862480044f74c9324a813d8c6825d53ace5cc18f2" },
+]
+
+[[member]]
+name = "project"
+kind = "project-plugin-effect"
+app = "effectcraft"
+expect = "comp Gain renders the 0.8, 0.4, 0.2 solid at gain 0.5 in 8 bpc; comp Neighbours gets both neighbour frames on frames 0 and 1"
+files = [
+    { path = "project.ecproj", sha256 = "6812d9537351122ff6b410e482c44ec6a0ee8a38502ca9f23f6e9812aae7c474" },
+]
+
+[[member]]
+name = "script-settings"
+kind = "script-settings"
+app = "effectcraft"
+expect = "app.settings reads greeting = hello in section Corpus from script_settings.json"
+files = [
+    { path = "script_settings.json", sha256 = "2264e11560060e7a20e9dad5eaf43d8f75203cc8cb850806f643025077569eee" },
+]
+
+[[member]]
+name = "scripts"
+kind = "jsx-script"
+app = "effectcraft"
+expect = "File > Scripts lists Corpus Script.jsx and Corpus Tools/Corpus Hello.jsx; running Corpus Script.jsx adds the comp Corpus Script Comp"
+files = [
+    { path = "Scripts/Corpus Script.jsx", sha256 = "58ed34a647ce89a8f902eee9213109db6bab357b2b04ba49a6e96f93174c596e" },
+    { path = "Scripts/Corpus Tools/Corpus Hello.jsx", sha256 = "01a9573a1dd926f31b1fa6b6e95814b6689d8f4ce04409abbf4355db0b13035a" },
+]
+
+[[member]]
+name = "scriptui-panels"
+kind = "scriptui-panels"
+app = "effectcraft"
+expect = "window.restoreScriptPanels reopens Corpus Panel.jsx from scriptui_panels.json"
+files = [
+    { path = "Scripts/ScriptUI Panels/Corpus Panel.jsx", sha256 = "bd64c7560b2fca31ec02cf2da06e6c67d61135733d93206d89e83c8d0c7fc12d" },
+    { path = "scriptui_panels.json", sha256 = "7ec33637ababecc1887d209467e8883f6b30e51cafe849ed4c496fceaf04079b" },
+]
+
+[[member]]
+name = "shutdown-scripts"
+kind = "shutdown-scripts"
+app = "effectcraft"
+expect = "file.runShutdownScripts runs Scripts/Shutdown/Corpus Shutdown.jsx, which saves shutdown = ran"
+files = [
+    { path = "Scripts/Shutdown/Corpus Shutdown.jsx", sha256 = "daaa786b9cd3e2cca07fbbe06909c4ed96ccdde10e6be050c74132d6313a2902" },
+]
+
+[[member]]
+name = "startup-scripts"
+kind = "startup-scripts"
+app = "effectcraft"
+expect = "file.runStartupScripts runs Scripts/Startup/Corpus Startup.jsx, which saves startup = ran"
+files = [
+    { path = "Scripts/Startup/Corpus Startup.jsx", sha256 = "e7e4896b8c9a67e56cdeab594d05e69dfa504ad8b76145158fb2a3dccf62b7e6" },
+]
