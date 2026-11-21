@@ -468,7 +468,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.key.ccsimplewireremoval",
             "Line Removal",
-            Declared::Filter(Visual::GPU.time(TimeReach::OtherFrames)),
+            Declared::Filter(Visual::GPU.time(TimeReach::OtherTimesUnkeyed)),
             vec![
                 p("pointA", "Point A", Value::Vec2([0.25, 0.25]), ParamUi::Point),
                 p("pointB", "Point B", Value::Vec2([0.75, 0.75]), ParamUi::Point),

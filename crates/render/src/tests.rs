@@ -732,7 +732,7 @@ fn layer_cached(p: &Project, cid: ItemId, index: usize) -> bool {
     crate::cache::layer_key(&crate::eval::EvalCtx::new(p, cid, c, Tick::from_seconds_f64(0.9)), &c.layers[index], 1.0, false, false).is_some()
 }
 
-const READ_OWN_STACK_AT_OTHER_TIMES: &[&str] = &[
+const READ_OWN_LAYER_OR_PARAMS_AT_OTHER_TIMES: &[&str] = &[
     "ec.noise.removegrain",
     "ec.blur.camerashakedeblur",
     "ec.color.autolevels",
@@ -745,6 +745,12 @@ const READ_OWN_STACK_AT_OTHER_TIMES: &[&str] = &[
     "ec.matte.refinehard",
     "ec.matte.rotobrush",
     "ec.matte.objectmatte",
+    "ec.color.colorstabilizer",
+    "ec.key.ccsimplewireremoval",
+    "ec.paint.paint",
+    "ec.distort.transform",
+    "ec.generate.radiowaves",
+    "ec.generate.writeon",
 ];
 
 const READ_PICKED_LAYERS_AT_OTHER_TIMES: &[(&str, &str)] =
@@ -763,8 +769,8 @@ fn an_effect_reading_other_times_keeps_expression_layers_out_of_the_layer_cache(
         layer_cached(&p, cid, 0)
     };
     assert!(own(None), "an expression alone keeps the layer cached");
-    let wrong: Vec<&str> = READ_OWN_STACK_AT_OTHER_TIMES.iter().copied().filter(|id| own(Some(id))).collect();
-    assert!(wrong.is_empty(), "these read their own layer at other times, yet the layer is cached: {wrong:?}");
+    let wrong: Vec<&str> = READ_OWN_LAYER_OR_PARAMS_AT_OTHER_TIMES.iter().copied().filter(|id| own(Some(id))).collect();
+    assert!(wrong.is_empty(), "these read their own layer or parameters at other times, yet the layer is cached: {wrong:?}");
     let picked = |id: Option<(&str, &str)>| {
         let (mut p, cid, comp) = setup();
         let mut map = solid(&mut p, &comp, [0.5, 0.5, 0.5], 200, 100);

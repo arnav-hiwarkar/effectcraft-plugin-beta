@@ -152,7 +152,7 @@ pub fn specs() -> Vec<EffectSpec> {
         category: "Paint",
         params: vec![p("on_transparent", "Paint on Transparent", Value::Bool(false), ParamUi::Checkbox)],
         render,
-        declared: Declared::Filter(Visual::CPU.time(TimeReach::OtherFrames)),
+        declared: Declared::Filter(Visual::CPU.time(TimeReach::OtherTimesUnkeyed)),
         float: true,
     }]
 }

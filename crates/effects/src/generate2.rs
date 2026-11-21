@@ -1128,7 +1128,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.generate.radiowaves",
             "Radio Waves",
-            Declared::Filter(Visual::GPU.time(TimeReach::Clock)),
+            Declared::Filter(Visual::GPU.time(TimeReach::OtherTimesUnkeyed)),
             vec![
                 p("producerPoint", "Producer Point", pt(0.5, 0.5), ParamUi::Point),
                 p("parametersAreSetAt", "Parameters Are Set At", Value::Enum(1), popup(&["Birth", "Each Frame"])),

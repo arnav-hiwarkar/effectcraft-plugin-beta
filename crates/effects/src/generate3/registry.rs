@@ -134,7 +134,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.generate.writeon",
             "Write-on",
-            Declared::Filter(Visual::GPU),
+            Declared::Filter(Visual::GPU.time(TimeReach::OtherTimesUnkeyed)),
             vec![
                 p("brushPosition", "Brush Position", pt(0.5, 0.5), ParamUi::Point),
                 p("color", "Color", col(1.0, 1.0, 1.0), ParamUi::Color),

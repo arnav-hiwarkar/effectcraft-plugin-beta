@@ -102,7 +102,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.color.colorstabilizer",
             "Color Stabilizer",
-            Declared::Filter(Visual::GPU.time(TimeReach::OtherFrames)),
+            Declared::Filter(Visual::GPU.time(TimeReach::OtherTimesUnkeyed)),
             cc,
             vec![
                 // The pivot frame (After Effects' Set Frame button stores it).

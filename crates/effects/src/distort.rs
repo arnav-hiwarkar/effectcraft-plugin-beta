@@ -510,7 +510,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.distort.transform",
             "Transform",
-            Declared::Filter(Visual::GPU.time(TimeReach::Clock)),
+            Declared::Filter(Visual::GPU.time(TimeReach::OtherTimesUnkeyed)),
             vec![
                 p("anchor", "Anchor Point", pt(0.5, 0.5), ParamUi::Point),
                 p("position", "Position", pt(0.5, 0.5), ParamUi::Point),
