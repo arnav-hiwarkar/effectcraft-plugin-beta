@@ -925,7 +925,7 @@ impl<'a> Cx<'a> {
     pub fn write_log(&self, result: &Result<crate::Report, crate::ExportError>, seconds: f64) -> Option<String> {
         let level = self.job.options.log;
         // Errors Only: a log for failures (a user stop is not an error).
-        if level == RenderLog::ErrorsOnly && matches!(result, Ok(_) | Err(crate::ExportError::Cancelled)) {
+        if level == RenderLog::ErrorsOnly && result.as_ref().err().is_none_or(crate::ExportError::is_cancelled) {
             return None;
         }
         let comp = self.comp();

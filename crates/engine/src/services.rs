@@ -1,19 +1,4 @@
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Durability {
-    Durable,
-    Unconfirmed(craft_atomic::Reasons),
-    NotMeasured,
-}
-
-impl Durability {
-    pub fn id(self) -> String {
-        match self {
-            Self::Durable => "durable".into(),
-            Self::NotMeasured => "not-measured".into(),
-            Self::Unconfirmed(reasons) => reasons.ids().join("+"),
-        }
-    }
-}
+pub use craft_atomic::Durability;
 
 /// Host services (file access) injected by the frontend.
 pub trait Services: Send + Sync {
@@ -118,7 +103,7 @@ impl Services for FsServices {
         craft_atomic::write(std::path::Path::new(path), data).visible()
     }
     fn write_file_durability(&self, path: &str, data: &[u8]) -> std::io::Result<Durability> {
-        craft_atomic::write(std::path::Path::new(path), data).published().map(|reasons| reasons.map_or(Durability::Durable, Durability::Unconfirmed))
+        craft_atomic::write(std::path::Path::new(path), data).published().map(Durability::of)
     }
 }
 

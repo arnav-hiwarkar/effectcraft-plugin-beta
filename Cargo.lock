@@ -1198,7 +1198,7 @@ source = "git+https://github.com/storytold/craft-libs?rev=5a7a63a21dd03dd1a2bc6c
 [[package]]
 name = "craft-atomic"
 version = "0.1.0"
-source = "git+https://github.com/arnav-hiwarkar/craft-libs-plugin-beta?rev=5630535f065e6d91c31ba45197927614c1c45b62#5630535f065e6d91c31ba45197927614c1c45b62"
+source = "git+https://github.com/arnav-hiwarkar/craft-libs-plugin-beta?rev=7ac46cf4574d0d355ffe0c40d9a929b82883232b#7ac46cf4574d0d355ffe0c40d9a929b82883232b"
 dependencies = [
  "exacl",
  "log",

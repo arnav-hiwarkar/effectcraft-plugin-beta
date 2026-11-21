@@ -87,7 +87,12 @@ impl Exporter for FileExporter {
                     overflow: r.overflow,
                     unconfirmed: r.unconfirmed.into_iter().map(|u| effectcraft_engine::UnconfirmedFile { path: u.path, reasons: u.reasons.ids() }).collect(),
                 }),
-                Err(effectcraft_export::ExportError::Cancelled) => Err(effectcraft_engine::render_queue::CANCELLED.into()),
+                Err(e) if e.is_cancelled() => {
+                    if let effectcraft_export::ExportError::Replaced { replaced, .. } = &e {
+                        log::warn!("render stopped after replacing existing files: {}", replaced.join(", "));
+                    }
+                    Err(effectcraft_engine::render_queue::CANCELLED.into())
+                }
                 Err(e) => Err(e.to_string()),
             }
         })

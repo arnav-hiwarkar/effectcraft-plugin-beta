@@ -71,6 +71,16 @@ pub enum ExportError {
     Replaced { error: Box<ExportError>, replaced: Vec<String> },
 }
 
+impl ExportError {
+    pub fn is_cancelled(&self) -> bool {
+        match self {
+            Self::Cancelled => true,
+            Self::Replaced { error, .. } => error.is_cancelled(),
+            Self::NoComp | Self::Io(_) | Self::Encode(_) | Self::Unsupported(_) => false,
+        }
+    }
+}
+
 pub type Result<T> = std::result::Result<T, ExportError>;
 
 fn io(e: impl std::fmt::Display) -> ExportError {
