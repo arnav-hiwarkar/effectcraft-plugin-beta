@@ -1,4 +1,13 @@
 [[member]]
+name = "default-plugins-dir"
+kind = "plugins-dir-default"
+app = "effectcraft"
+expect = "with no host folder, plugins_dir is Plug-ins next to the settings and loading it registers org.example.corpus.default"
+files = [
+    { path = "Plug-ins/corpus-default.wasm", sha256 = "f665f54edc42f83b00527299f3fafa0ea01d9eb2ed4e3a1e729436afc7934573" },
+]
+
+[[member]]
 name = "gain-effect"
 kind = "wasm-abi1"
 app = "effectcraft"
@@ -6,6 +15,17 @@ expect = "ABI 1 org.example.corpus.gain loads from .wasm and from .wat text and 
 files = [
     { path = "gain.wasm", sha256 = "7724cc1d1ea3a3250df26afd808cf4fe136ee71a7b8d0fedb5f01cd834f15177" },
     { path = "gain.wat", sha256 = "8407edba7e5e7e060028e32650ada145e3db50d7ba46ef6c9e629806d3164aef" },
+]
+
+[[member]]
+name = "install-bundle"
+kind = "effect-plugins-install"
+app = "effectcraft"
+expect = "effect.plugins.install of the Bundle folder copies corpus-bundle.wasm into Plug-ins, the panel into ScriptUI Panels, and skips README.txt"
+files = [
+    { path = "Bundle/Corpus Bundle Panel.jsx", sha256 = "bd64c7560b2fca31ec02cf2da06e6c67d61135733d93206d89e83c8d0c7fc12d" },
+    { path = "Bundle/README.txt", sha256 = "01a6d0c01ac4d376c46f7655f56104b283f03d88ae019ef03780f0abe1de7c74" },
+    { path = "Bundle/corpus-bundle.wasm", sha256 = "eaa388cdfab6880c15af4faa318574e81d68baa733cab011e521e1e16635770e" },
 ]
 
 [[member]]
@@ -40,6 +60,16 @@ files = [
 ]
 
 [[member]]
+name = "neighbour-probe-effect"
+kind = "wasm-abi2"
+app = "effectcraft"
+expect = "the ABI 2 probe writes the current, previous and next layer times, the flags, the frame size and the red and green of each frame"
+files = [
+    { path = "neighbour-probe.wasm", sha256 = "e2745de7aed55ef68a8be433101adae4135331a75deb944033f685bbc7034f12" },
+    { path = "neighbour-probe.wat", sha256 = "5944018f580187b477a52626e032720a511701c1f7d6470f4d7253fad1e31845" },
+]
+
+[[member]]
 name = "neighbours-effect"
 kind = "wasm-abi2"
 app = "effectcraft"
@@ -50,6 +80,16 @@ files = [
 ]
 
 [[member]]
+name = "params-probe-effect"
+kind = "wasm-abi1"
+app = "effectcraft"
+expect = "the ABI 1 probe writes the parameter count, frame size, time, scale and the ten flattened slider, angle, checkbox, popup, point and colour values"
+files = [
+    { path = "params-probe.wasm", sha256 = "6960179757466e380631e60e2b10b85d8164b50ed398062c94c4d83e53cb1e90" },
+    { path = "params-probe.wat", sha256 = "d0f07296673c0031fe25938dfb041616b29caedbddb58f0537177dee719cbfc1" },
+]
+
+[[member]]
 name = "plugins-dir"
 kind = "plugins-dir"
 app = "effectcraft"
@@ -57,6 +97,15 @@ expect = "effect.plugins.load on the Plug-ins folder loads org.example.corpus.fo
 files = [
     { path = "Plug-ins/corpus-folder.wasm", sha256 = "daf2aa5a7f4d4173623bb022930d3fe98dbc9f6518b31125172eff53db68f932" },
     { path = "Plug-ins/not-a-module.wasm", sha256 = "93cd816056f28ae55b76347862480044f74c9324a813d8c6825d53ace5cc18f2" },
+]
+
+[[member]]
+name = "probe-project"
+kind = "project-plugin-effect"
+app = "effectcraft"
+expect = "a 32 bpc project: Params Probe reads the saved parameter values, Neighbour Probe reads an animated Fill one frame either side"
+files = [
+    { path = "project.ecproj", sha256 = "ed3e2cfe3d3ae8d273f850c838024eef18dc8caf8c9d9d7657f56a0fc5d46b01" },
 ]
 
 [[member]]

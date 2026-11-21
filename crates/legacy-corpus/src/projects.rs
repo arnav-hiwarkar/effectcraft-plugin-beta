@@ -3,11 +3,13 @@ use effectcraft_project::{GroupKind, Node, Project, SavedView};
 use serde_json::{Value, json};
 
 use crate::Error;
-use crate::modules::{ABSENT_ID, GAIN_ID, NEIGHBOURS_ID};
+use crate::modules::{ABSENT_ID, GAIN_ID, NEIGHBOUR_PROBE_ID, NEIGHBOURS_ID, PARAMS_PROBE_ID};
 
 pub const SAVED_BY: &str = "0.24.1";
 pub const GAIN_COMP: &str = "Gain";
 pub const NEIGHBOURS_COMP: &str = "Neighbours";
+pub const PARAMS_PROBE_COMP: &str = "Params Probe";
+pub const NEIGHBOUR_PROBE_COMP: &str = "Neighbour Probe";
 
 fn project_error(e: impl std::fmt::Display) -> Error {
     Error::Project(e.to_string())
@@ -65,4 +67,28 @@ pub fn projects(gain: &[u8], neighbours: &[u8]) -> Result<(Vec<u8>, Vec<u8>), Er
     comp_with(&mut s, NEIGHBOURS_COMP, NEIGHBOURS_ID)?;
     rename_effect(&mut missing, GAIN_ID, ABSENT_ID);
     Ok((file_text(&s.project)?, file_text(&missing)?))
+}
+
+pub fn probe_project(params_probe: &[u8], neighbour_probe: &[u8]) -> Result<Vec<u8>, Error> {
+    register(PARAMS_PROBE_ID, params_probe)?;
+    register(NEIGHBOUR_PROBE_ID, neighbour_probe)?;
+    let mut s = Session::default();
+    run(&mut s, "file.projectSettings", json!({"bitDepth": 32}))?;
+    let layer = comp_with(&mut s, PARAMS_PROBE_COMP, PARAMS_PROBE_ID)?;
+    for (param, value) in [
+        ("amount", json!(0.5)),
+        ("turn", json!(45)),
+        ("enabled", json!(false)),
+        ("shape", json!(2)),
+        ("centre", json!([3, 1])),
+        ("tint", json!([0.4, 0.5, 0.6, 1.0])),
+    ] {
+        run(&mut s, "prop.set", json!({"layer": layer, "path": format!("effects/#1/{param}"), "value": value}))?;
+    }
+    let layer = comp_with(&mut s, NEIGHBOUR_PROBE_COMP, "ec.generate.fill")?;
+    for (time, value) in [(0.0, json!([0.0, 0.0, 0.0, 1.0])), (1.0, json!([1.0, 0.5, 0.0, 1.0]))] {
+        run(&mut s, "prop.addKey", json!({"layer": layer, "path": "effects/#1/color", "time": time, "value": value}))?;
+    }
+    run(&mut s, "effect.apply", json!({"effect": NEIGHBOUR_PROBE_ID, "layers": [layer]}))?;
+    file_text(&s.project)
 }

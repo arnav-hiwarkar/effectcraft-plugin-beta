@@ -1,13 +1,13 @@
 mod coverage;
 mod parity;
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
 
 use craft_testkit::corpus::Committed;
 use effectcraft_engine::Session;
 use effectcraft_engine::config::DirConfig;
-use effectcraft_legacy_corpus::{GAIN_ID, NEIGHBOURS_ID};
+use effectcraft_legacy_corpus::{GAIN_ID, NEIGHBOUR_PROBE_ID, NEIGHBOURS_ID, PARAMS_PROBE_ID};
 use effectcraft_project::{GroupKind, ItemId, Node, Project};
 
 pub fn corpus() -> Committed {
@@ -20,8 +20,12 @@ pub fn loaded() {
         let corpus = corpus();
         effectcraft_plugin::load_wasm(&corpus.bytes("gain-effect", "gain.wasm").unwrap(), "gain.wasm").unwrap();
         effectcraft_plugin::load_wasm(&corpus.bytes("neighbours-effect", "neighbours.wasm").unwrap(), "neighbours.wasm").unwrap();
+        effectcraft_plugin::load_wasm(&corpus.bytes("params-probe-effect", "params-probe.wasm").unwrap(), "params-probe.wasm").unwrap();
+        effectcraft_plugin::load_wasm(&corpus.bytes("neighbour-probe-effect", "neighbour-probe.wasm").unwrap(), "neighbour-probe.wasm").unwrap();
     });
-    assert!(effectcraft_effects::find(GAIN_ID).is_some() && effectcraft_effects::find(NEIGHBOURS_ID).is_some());
+    for id in [GAIN_ID, NEIGHBOURS_ID, PARAMS_PROBE_ID, NEIGHBOUR_PROBE_ID] {
+        assert!(effectcraft_effects::find(id).is_some(), "{id}");
+    }
 }
 
 pub struct Settings {
@@ -36,8 +40,14 @@ impl Settings {
 }
 
 pub fn settings(member: &str) -> Settings {
+    let mut st = fresh_settings();
+    corpus().copy_member(member, st.dir.path()).unwrap();
+    st.session.load_settings();
+    st
+}
+
+pub fn fresh_settings() -> Settings {
     let dir = tempfile::tempdir().unwrap();
-    copy_member(member, dir.path());
     let mut session = Session {
         config: Some(Arc::new(DirConfig::new(dir.path()))),
         plugin_loader: Some(effectcraft_plugin::loader),
@@ -46,18 +56,7 @@ pub fn settings(member: &str) -> Settings {
         ..Default::default()
     };
     effectcraft_script::install(&mut session);
-    session.load_settings();
     Settings { session, dir }
-}
-
-pub fn copy_member(member: &str, to: &Path) {
-    let corpus = corpus();
-    let entry = corpus.manifest().entry(member).unwrap().clone();
-    for file in &entry.files {
-        let target = to.join(&file.path);
-        std::fs::create_dir_all(target.parent().unwrap()).unwrap();
-        std::fs::write(target, corpus.bytes(member, &file.path).unwrap()).unwrap();
-    }
 }
 
 pub fn open_project(member: &str) -> Session {
@@ -74,6 +73,10 @@ pub fn comp(s: &Session, name: &str) -> ItemId {
 pub fn thousandths(s: &Session, comp_name: &str, seconds: f64) -> Vec<[i32; 4]> {
     let image = s.render(comp(s, comp_name), effectcraft_time::Tick::from_seconds_f64(seconds), effectcraft_render::RenderOpts::default());
     image.data.iter().map(|px| px.map(|v| (v * 1000.0).round() as i32)).collect()
+}
+
+pub fn colour_stream(pixels: &[[i32; 4]], n: usize) -> Vec<i32> {
+    pixels.iter().flat_map(|px| px[..3].to_vec()).take(n).collect()
 }
 
 pub fn effect_ids(project: &Project) -> Vec<String> {

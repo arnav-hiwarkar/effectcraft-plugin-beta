@@ -7,49 +7,34 @@ mod projects;
 mod scripts;
 
 use std::fmt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use craft_testkit::corpus::Corpus;
 
 pub use library::{CATALOG_FETCHED, MISMATCHED_SHA256};
-pub use modules::{ABSENT_ID, FOLDER_ID, GAIN_ID, LIBRARY_ID, NEIGHBOURS_ID, TAMPERED_ID};
-pub use projects::{GAIN_COMP, NEIGHBOURS_COMP, SAVED_BY};
-pub use scripts::{PANEL, SCRIPT, SECTION, SUBMENU_SCRIPT};
+pub use modules::{ABSENT_ID, BUNDLE_ID, DEFAULT_DIR_ID, FOLDER_ID, GAIN_ID, LIBRARY_ID, NEIGHBOUR_PROBE_ID, NEIGHBOURS_ID, PARAMS_PROBE_ID, TAMPERED_ID};
+pub use projects::{GAIN_COMP, NEIGHBOUR_PROBE_COMP, NEIGHBOURS_COMP, PARAMS_PROBE_COMP, SAVED_BY};
+pub use scripts::{BUNDLE_PANEL, PANEL, SCRIPT, SECTION, SUBMENU_SCRIPT};
 
 pub const APP: &str = "effectcraft";
 
-macro_rules! legacy_paths {
-    ($($variant:ident => $name:literal),+ $(,)?) => {
-        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-        pub enum LegacyPath {
-            $($variant),+
-        }
-
-        impl LegacyPath {
-            pub const ALL: [LegacyPath; [$($name),+].len()] = [$(LegacyPath::$variant),+];
-
-            pub fn name(self) -> &'static str {
-                match self {
-                    $(LegacyPath::$variant => $name),+
-                }
-            }
-        }
-    };
-}
-
-legacy_paths! {
-    WasmAbi1 => "wasm-abi1",
-    WasmAbi2 => "wasm-abi2",
-    ProjectPluginEffect => "project-plugin-effect",
-    JsxScript => "jsx-script",
-    ScriptUiPanels => "scriptui-panels",
-    ScriptSettings => "script-settings",
-    StartupScripts => "startup-scripts",
-    ShutdownScripts => "shutdown-scripts",
-    LibraryVerified => "library-verified",
-    LibraryMismatch => "library-mismatch",
-    PluginsDir => "plugins-dir",
-    MissingPlugin => "plugin-missing",
+craft_testkit::legacy_paths! {
+    pub enum LegacyPath {
+        WasmAbi1 => "wasm-abi1",
+        WasmAbi2 => "wasm-abi2",
+        ProjectPluginEffect => "project-plugin-effect",
+        JsxScript => "jsx-script",
+        ScriptUiPanels => "scriptui-panels",
+        ScriptSettings => "script-settings",
+        StartupScripts => "startup-scripts",
+        ShutdownScripts => "shutdown-scripts",
+        LibraryVerified => "library-verified",
+        LibraryMismatch => "library-mismatch",
+        PluginsDir => "plugins-dir",
+        PluginsDirDefault => "plugins-dir-default",
+        PluginsInstall => "effect-plugins-install",
+        MissingPlugin => "plugin-missing",
+    }
 }
 
 #[derive(Debug)]
@@ -80,7 +65,8 @@ impl From<craft_testkit::corpus::Error> for Error {
 }
 
 pub fn root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/legacy-corpus")
+    let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    crate_dir.ancestors().nth(2).unwrap_or(crate_dir).join("tests/legacy-corpus")
 }
 
 fn file(path: &str, bytes: impl Into<Vec<u8>>) -> (String, Vec<u8>) {
@@ -91,6 +77,8 @@ pub fn generate() -> Result<Corpus, Error> {
     let gain = modules::gain(GAIN_ID, "Corpus Gain")?;
     let neighbours = modules::neighbours()?;
     let folder = modules::gain(FOLDER_ID, "Corpus Folder Gain")?;
+    let params_probe = modules::params_probe()?;
+    let neighbour_probe = modules::neighbour_probe()?;
     let mut corpus = Corpus::new(APP)?;
     corpus.add(
         "gain-effect",
@@ -164,6 +152,40 @@ pub fn generate() -> Result<Corpus, Error> {
         LegacyPath::PluginsDir.name(),
         "effect.plugins.load on the Plug-ins folder loads org.example.corpus.folder and reports not-a-module.wasm",
         vec![file("Plug-ins/corpus-folder.wasm", folder.binary), file("Plug-ins/not-a-module.wasm", b"not a module\n".to_vec())],
+    )?;
+    corpus.add(
+        "params-probe-effect",
+        LegacyPath::WasmAbi1.name(),
+        "the ABI 1 probe writes the parameter count, frame size, time, scale and the ten flattened slider, angle, checkbox, popup, point and colour values",
+        vec![file("params-probe.wat", params_probe.text.clone()), file("params-probe.wasm", params_probe.binary.clone())],
+    )?;
+    corpus.add(
+        "neighbour-probe-effect",
+        LegacyPath::WasmAbi2.name(),
+        "the ABI 2 probe writes the current, previous and next layer times, the flags, the frame size and the red and green of each frame",
+        vec![file("neighbour-probe.wat", neighbour_probe.text.clone()), file("neighbour-probe.wasm", neighbour_probe.binary.clone())],
+    )?;
+    corpus.add(
+        "probe-project",
+        LegacyPath::ProjectPluginEffect.name(),
+        "a 32 bpc project: Params Probe reads the saved parameter values, Neighbour Probe reads an animated Fill one frame either side",
+        vec![file("project.ecproj", projects::probe_project(&params_probe.binary, &neighbour_probe.binary)?)],
+    )?;
+    corpus.add(
+        "install-bundle",
+        LegacyPath::PluginsInstall.name(),
+        "effect.plugins.install of the Bundle folder copies corpus-bundle.wasm into Plug-ins, the panel into ScriptUI Panels, and skips README.txt",
+        vec![
+            file("Bundle/corpus-bundle.wasm", modules::gain(BUNDLE_ID, "Corpus Bundle Gain")?.binary),
+            file(&format!("Bundle/{BUNDLE_PANEL}"), scripts::PANEL_CODE),
+            file("Bundle/README.txt", b"Corpus bundle: one effect and one panel.\n".to_vec()),
+        ],
+    )?;
+    corpus.add(
+        "default-plugins-dir",
+        LegacyPath::PluginsDirDefault.name(),
+        "with no host folder, plugins_dir is Plug-ins next to the settings and loading it registers org.example.corpus.default",
+        vec![file("Plug-ins/corpus-default.wasm", modules::gain(DEFAULT_DIR_ID, "Corpus Default Gain")?.binary)],
     )?;
     Ok(corpus)
 }

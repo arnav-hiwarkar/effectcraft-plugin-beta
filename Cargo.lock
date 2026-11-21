@@ -1555,7 +1555,7 @@ dependencies = [
 [[package]]
 name = "craft-testkit"
 version = "0.1.0"
-source = "git+https://github.com/arnav-hiwarkar/craft-libs-plugin-beta?rev=20e857da7a1ea0cff9444840ddaffc84d5c2c0d8#20e857da7a1ea0cff9444840ddaffc84d5c2c0d8"
+source = "git+https://github.com/arnav-hiwarkar/craft-libs-plugin-beta?rev=31340ca41fb557a33bb62d4c695bbc7712ccd3c4#31340ca41fb557a33bb62d4c695bbc7712ccd3c4"
 dependencies = [
  "serde",
  "sha2",

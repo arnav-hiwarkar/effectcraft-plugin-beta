@@ -10,6 +10,7 @@ use crate::Error;
 pub const SCRIPT: &str = "Corpus Script.jsx";
 pub const SUBMENU_SCRIPT: &str = "Corpus Tools/Corpus Hello.jsx";
 pub const PANEL: &str = "Corpus Panel.jsx";
+pub const BUNDLE_PANEL: &str = "Corpus Bundle Panel.jsx";
 pub const SECTION: &str = "Corpus";
 
 pub const SCRIPT_CODE: &str = "app.project.items.addComp(\"Corpus Script Comp\", 4, 2, 1, 1, 10);\n";
