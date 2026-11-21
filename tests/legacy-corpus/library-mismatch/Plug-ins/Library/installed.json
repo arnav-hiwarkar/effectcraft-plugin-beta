@@ -1,0 +1,12 @@
+{
+  "packages": {
+    "org.example.corpus.tampered": {
+      "version": "1.0.0",
+      "file": "org.example.corpus.tampered/1.0.0/org.example.corpus.tampered.wasm",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "effects": [
+        "org.example.corpus.tampered"
+      ]
+    }
+  }
+}

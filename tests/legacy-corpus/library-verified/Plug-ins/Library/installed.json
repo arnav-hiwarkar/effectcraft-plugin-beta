@@ -1,0 +1,12 @@
+{
+  "packages": {
+    "org.example.corpus.library": {
+      "version": "1.0.0",
+      "file": "org.example.corpus.library/1.0.0/org.example.corpus.library.wasm",
+      "sha256": "18b36c99174ccc1911e940539d363dcc4fbc91555cd568839380be9f2ecdb516",
+      "effects": [
+        "org.example.corpus.library"
+      ]
+    }
+  }
+}

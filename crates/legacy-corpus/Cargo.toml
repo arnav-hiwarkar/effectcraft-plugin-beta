@@ -1,0 +1,32 @@
+[package]
+name = "effectcraft-legacy-corpus"
+description = "The legacy plug-in and script corpus: WebAssembly effects, projects, scripts, ScriptUI and Library layouts generated from today's code, with the parity tests that load them"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "legacy-corpus"
+path = "src/main.rs"
+
+[dependencies]
+effectcraft-effects = { workspace = true }
+effectcraft-engine = { workspace = true }
+effectcraft-plugin = { workspace = true, features = ["wasm"] }
+effectcraft-project = { workspace = true }
+effectcraft-script = { workspace = true }
+craft-ecproj-format = { workspace = true }
+craft-testkit = { workspace = true, features = ["corpus"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tempfile = { workspace = true }
+wat = "1.228"
+
+[dev-dependencies]
+effectcraft-render = { workspace = true }
+effectcraft-time = { workspace = true }
