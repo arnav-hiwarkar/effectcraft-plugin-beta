@@ -24,6 +24,8 @@ mod color_fx;
 pub mod controls;
 pub mod crypto_select;
 #[cfg(test)]
+mod declared_table;
+#[cfg(test)]
 mod display_names;
 mod distort;
 mod distort2;
