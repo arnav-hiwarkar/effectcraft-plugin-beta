@@ -815,7 +815,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.noise.removegrain",
             "Remove Grain",
-            Declared::Filter(Visual::GPU.time(TimeReach::ClockAndOtherFrames)),
+            Declared::Filter(Visual::GPU.time(TimeReach::OtherTimesUnkeyed)),
             [
                 vec![p("viewingMode", "Viewing Mode", Value::Enum(3), popup(&REMOVE_GRAIN_VIEWS))],
                 preview_params(),

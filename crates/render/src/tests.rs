@@ -718,6 +718,28 @@ fn stepped_particle_layers_with_a_birth_rate_expression_are_not_layer_cached() {
     }
 }
 
+#[test]
+fn remove_grain_after_an_expression_keeps_the_layer_out_of_the_layer_cache() {
+    let cached = |grain: bool| {
+        let (mut p, cid, comp) = setup();
+        let mut l = solid(&mut p, &comp, [0.5, 0.5, 0.5], 200, 100);
+        add_effect_200(&mut p, &mut l, "ec.blur.gaussian", &[]);
+        let blur = l.props.sub_mut("effects").unwrap().children.iter_mut().find_map(|c| match c {
+            effectcraft_project::Node::Group(g) => Some(g),
+            _ => None,
+        });
+        blur.unwrap().prop_mut("blurriness").unwrap().expr = Some(effectcraft_project::Expression { text: "time * 4".into(), enabled: true });
+        if grain {
+            add_effect_200(&mut p, &mut l, "ec.noise.removegrain", &[("temporalFiltering/enabled", Value::Bool(true))]);
+        }
+        p.comp_mut(cid).unwrap().layers = vec![l].into();
+        let c = p.comp(cid).unwrap();
+        crate::cache::layer_key(&crate::eval::EvalCtx::new(&p, cid, c, Tick::from_seconds_f64(0.9)), &c.layers[0], 1.0, false, false).is_some()
+    };
+    assert!(cached(false), "an expression alone keeps the layer cached");
+    assert!(!cached(true), "Remove Grain reads the blurred layer, and its expression, at the neighbouring frames");
+}
+
 // ------------------------------------------------------------------------------ layer cache
 
 fn render_cached(p: &Project, cid: ItemId, t: Tick, cache: Option<&crate::LayerCache>) -> crate::Image {

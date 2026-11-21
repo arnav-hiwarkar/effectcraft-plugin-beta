@@ -300,7 +300,7 @@ const BUILT_IN: &[Row] = &[
     ("ec.noise.noisealpha", "filter", "gpu", "clock", "layer", "layer"),
     ("ec.noise.noisehls", "filter", "gpu", "frame", "layer", "layer"),
     ("ec.noise.noisehlsauto", "filter", "gpu", "clock", "layer", "layer"),
-    ("ec.noise.removegrain", "filter", "gpu", "clock-and-other-frames", "layer", "layer"),
+    ("ec.noise.removegrain", "filter", "gpu", "other-times-unkeyed", "layer", "layer"),
     ("ec.noise.turbulent", "filter", "gpu", "frame", "layer", "layer"),
     ("ec.obsolete.basic3d", "filter", "gpu", "frame", "layer", "layer"),
     ("ec.obsolete.basictext", "filter", "gpu", "frame", "layer", "layer"),
