@@ -411,7 +411,7 @@ fn audio_changed_inner(old: &Project, new: &Project, comp: ItemId, seen: &mut Ha
     /// The layer's audio effects (Effect > Audio), the only effects the mixer applies; a video effect
     /// edit leaves them as they were.
     fn audio_effects(l: &Layer) -> Vec<&PropGroup> {
-        let is_audio = |g: &&PropGroup| matches!(&g.kind, GroupKind::Effect { effect } if effectcraft_engine::effects::declared(effect).is_some_and(|d| d.role == effectcraft_engine::effects::EffectRole::Audio));
+        let is_audio = |g: &&PropGroup| matches!(&g.kind, GroupKind::Effect { effect } if effectcraft_engine::effects::declared(effect) == Some(effectcraft_engine::effects::Declared::Audio));
         l.effects().into_iter().flat_map(|fx| fx.groups()).filter(is_audio).collect()
     }
     /// Audio expressions can read any property in any comp (including video-only effects and

@@ -14,7 +14,7 @@ use effectcraft_raster::{Image, Px};
 use rayon::prelude::*;
 
 use crate::util::{Plane, dist_to_poly, gauss_plane, layer_or_self, pick, point_in_poly, poly_length, poly_point_at, premul, remap, src_at, unpremul};
-use crate::{Buf, Declared, EffectCtx, EffectSpec, col, num, p, popup, slider};
+use crate::{Buf, Declared, EffectCtx, EffectSpec, Visual, col, num, p, popup, slider};
 
 fn spec(id: &'static str, name: &'static str, declared: Declared, params: Vec<crate::ParamSpec>, render: crate::RenderFn) -> EffectSpec {
     EffectSpec { id, name, category: "Distort", params, render, declared, float: true }
@@ -914,7 +914,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.distort.ccbender",
             "Flexible Bend",
-            Declared::GPU,
+            Declared::Filter(Visual::GPU),
             vec![
                 p("amount", "Amount", num(0.0), slider(-200.0, 200.0, -100.0, 100.0, 1)),
                 p("style", "Style", Value::Enum(0), popup(&["Bend", "Marilyn", "Sharp", "Boxer"])),
@@ -927,7 +927,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.distort.ccblobbylize",
             "Organic Displacement",
-            Declared::GPU,
+            Declared::Filter(Visual::GPU),
             vec![
                 p("blobLayer", "Blob Layer", Value::Layer(None), ParamUi::Layer),
                 p("property", "Property", Value::Enum(0), popup(&crate::util::SRC_NAMES[..8])),
@@ -950,7 +950,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.distort.ccpowerpin",
             "Perspective Pin",
-            Declared::GPU,
+            Declared::Filter(Visual::GPU),
             vec![
                 p("topLeft", "Top Left", pt(0.0, 0.0), ParamUi::Point),
                 p("topRight", "Top Right", pt(1.0, 0.0), ParamUi::Point),
@@ -970,7 +970,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.distort.ccripplepulse",
             "Pulsed Ripple",
-            Declared::GPU,
+            Declared::Filter(Visual::GPU),
             vec![
                 p("center", "Center", pt(0.5, 0.5), ParamUi::Point),
                 p("pulseLevel", "Pulse Level (animate)", num(0.0), slider(-1000.0, 1000.0, -100.0, 100.0, 1)),
@@ -983,7 +983,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.distort.ccslant",
             "Slant",
-            Declared::GPU,
+            Declared::Filter(Visual::GPU),
             vec![
                 p("slant", "Slant", num(0.0), slider(-1000.0, 1000.0, -100.0, 100.0, 1)),
                 p("stretching", "Stretching", Value::Bool(false), ParamUi::Checkbox),
@@ -995,7 +995,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.distort.ccsmear",
             "Directional Smear",
-            Declared::GPU,
+            Declared::Filter(Visual::GPU),
             vec![
                 p("from", "From", pt(0.35, 0.5), ParamUi::Point),
                 p("to", "To", pt(0.65, 0.5), ParamUi::Point),
@@ -1007,7 +1007,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.distort.ccsplit",
             "Split Warp",
-            Declared::GPU,
+            Declared::Filter(Visual::GPU),
             vec![
                 p("pointA", "Point A", pt(0.25, 0.5), ParamUi::Point),
                 p("pointB", "Point B", pt(0.75, 0.5), ParamUi::Point),
@@ -1018,7 +1018,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.distort.ccsplit2",
             "Dual Split Warp",
-            Declared::GPU,
+            Declared::Filter(Visual::GPU),
             vec![
                 p("pointA", "Point A", pt(0.25, 0.5), ParamUi::Point),
                 p("pointB", "Point B", pt(0.75, 0.5), ParamUi::Point),
@@ -1030,7 +1030,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.distort.smear",
             "Smear",
-            Declared::GPU,
+            Declared::Filter(Visual::GPU),
             vec![
                 p("sourceMask", "Source Mask", Value::Enum(0), popup(&MASK_CHOICES)),
                 p("boundaryMask", "Boundary Mask", Value::Enum(0), popup(&MASK_CHOICES)),
@@ -1046,7 +1046,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.distort.reshape",
             "Reshape",
-            Declared::GPU,
+            Declared::Filter(Visual::GPU),
             vec![
                 p("sourceMask", "Source Mask", Value::Enum(0), popup(&MASK_CHOICES)),
                 p("destinationMask", "Destination Mask", Value::Enum(0), popup(&MASK_CHOICES)),
@@ -1062,7 +1062,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.distort.twirllegacy",
             "Twirl (Legacy)",
-            Declared::GPU,
+            Declared::Filter(Visual::GPU),
             vec![
                 p("angle", "Angle", num(0.0), ParamUi::Angle),
                 p("radius", "Twirl Radius", num(30.0), slider(0.0, 100.0, 0.0, 100.0, 1)),
@@ -1073,7 +1073,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.distort.warp",
             "Warp",
-            Declared::GPU,
+            Declared::Filter(Visual::GPU),
             vec![
                 p("warpStyle", "Warp Style", Value::Enum(0), popup(&WARP_STYLES)),
                 p("warpAxis", "Warp Axis", Value::Enum(0), popup(&["Horizontal", "Vertical"])),
@@ -1086,7 +1086,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.distort.upscale",
             "Detail-preserving Upscale",
-            Declared::CPU,
+            Declared::Filter(Visual::CPU),
             vec![
                 p("scale", "Scale", num(100.0), slider(100.0, 1000.0, 100.0, 400.0, 1)),
                 p("reduceNoise", "Reduce Noise", num(0.0), pct()),

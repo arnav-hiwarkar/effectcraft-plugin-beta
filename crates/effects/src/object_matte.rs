@@ -35,7 +35,7 @@ use rayon::prelude::*;
 
 use crate::roto::{self, Chain, FROZEN, FrozenCache, INPUT_KEY};
 use crate::warp_stab::param;
-use crate::{Buf, Declared, EffectCtx, EffectSpec, Params, TimeReach, num, p, popup, slider};
+use crate::{Buf, Declared, EffectCtx, EffectSpec, Params, TimeReach, Visual, num, p, popup, slider};
 
 /// The effect's id.
 pub const ID: &str = "ec.matte.objectmatte";
@@ -78,7 +78,7 @@ pub fn specs() -> Vec<EffectSpec> {
             p(FROZEN, "Frozen", Value::Str(String::new()), ParamUi::Hidden),
         ],
         render,
-        declared: Declared::CPU.time(TimeReach::Neighbours),
+        declared: Declared::Filter(Visual::CPU.time(TimeReach::ClockAndOtherFrames)),
         float: true,
     }]
 }

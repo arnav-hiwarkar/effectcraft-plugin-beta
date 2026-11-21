@@ -2,34 +2,31 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use crate::plugin::{EffectPlugin, PluginFrame, PluginManifest, PluginParams, register_plugin};
-use crate::{Cover, EffectInputs, EffectRole, EffectSpec, Routes, TimeReach};
+use crate::{Cover, Declared, EffectInputs, EffectSpec, Routes, TimeReach, Visual};
 
 type Row = (&'static str, &'static str, &'static str, &'static str, &'static str, &'static str);
 
 fn row(s: &EffectSpec) -> Row {
-    let d = s.declared;
+    let Declared::Filter(v) = s.declared else { return (s.id, "audio", "cpu", "frame", "layer", "layer") };
     (
         s.id,
-        match d.role {
-            EffectRole::Filter => "filter",
-            EffectRole::Audio => "audio",
-        },
-        match d.routes {
+        "filter",
+        match v.routes {
             Routes::Cpu => "cpu",
             Routes::CpuAndGpu => "gpu",
         },
-        match d.time {
+        match v.time {
             TimeReach::Frame => "frame",
             TimeReach::Clock => "clock",
             TimeReach::OtherFrames => "other-frames",
-            TimeReach::Neighbours => "neighbours",
-            TimeReach::History => "history",
+            TimeReach::ClockAndOtherFrames => "clock-and-other-frames",
+            TimeReach::OtherTimesUnkeyed => "other-times-unkeyed",
         },
-        match d.inputs {
+        match v.inputs {
             EffectInputs::Layer => "layer",
             EffectInputs::CompScene => "comp-scene",
         },
-        match d.cover {
+        match v.cover {
             Cover::Layer => "layer",
             Cover::OwnMargins => "own-margins",
         },
@@ -90,8 +87,17 @@ fn plug_ins_declare_what_the_old_prefix_rules_said() {
     assert!(wrong.is_empty(), "{}", wrong.join("\n"));
 }
 
+#[test]
+fn declared_finds_built_ins_and_plug_ins_by_id() {
+    plugin("org.test.declared.lookup", true);
+    assert_eq!(crate::declared("ec.blur.gaussian"), Some(Declared::Filter(Visual::GPU.cover(Cover::OwnMargins))));
+    assert_eq!(crate::declared("ec.audio.delay"), Some(Declared::Audio));
+    assert_eq!(crate::declared("org.test.declared.lookup"), Some(Declared::Filter(Visual::CPU.time(TimeReach::OtherTimesUnkeyed))));
+    assert_eq!(crate::declared("org.test.declared.missing"), None);
+}
+
 const PLUG_INS: &[Row] = &[
-    ("org.test.declared.neighbours", "filter", "cpu", "history", "layer", "layer"),
+    ("org.test.declared.neighbours", "filter", "cpu", "other-times-unkeyed", "layer", "layer"),
     ("org.test.declared.plain", "filter", "cpu", "other-frames", "layer", "layer"),
 ];
 
@@ -120,7 +126,7 @@ const BUILT_IN: &[Row] = &[
     ("ec.audio.tone", "audio", "cpu", "frame", "layer", "layer"),
     ("ec.blur.bilateral", "filter", "gpu", "frame", "layer", "layer"),
     ("ec.blur.cameralens", "filter", "gpu", "frame", "layer", "layer"),
-    ("ec.blur.camerashakedeblur", "filter", "cpu", "neighbours", "layer", "layer"),
+    ("ec.blur.camerashakedeblur", "filter", "cpu", "clock-and-other-frames", "layer", "layer"),
     ("ec.blur.cccross", "filter", "gpu", "frame", "layer", "layer"),
     ("ec.blur.ccradial", "filter", "gpu", "frame", "layer", "layer"),
     ("ec.blur.ccradialfast", "filter", "gpu", "frame", "layer", "layer"),
@@ -148,9 +154,9 @@ const BUILT_IN: &[Row] = &[
     ("ec.channel.setmatte", "filter", "gpu", "frame", "layer", "layer"),
     ("ec.channel.shiftchannels", "filter", "gpu", "frame", "layer", "layer"),
     ("ec.channel.solidcomposite", "filter", "gpu", "frame", "layer", "layer"),
-    ("ec.color.autocolor", "filter", "gpu", "neighbours", "layer", "layer"),
-    ("ec.color.autocontrast", "filter", "gpu", "neighbours", "layer", "layer"),
-    ("ec.color.autolevels", "filter", "gpu", "neighbours", "layer", "layer"),
+    ("ec.color.autocolor", "filter", "gpu", "clock-and-other-frames", "layer", "layer"),
+    ("ec.color.autocontrast", "filter", "gpu", "clock-and-other-frames", "layer", "layer"),
+    ("ec.color.autolevels", "filter", "gpu", "clock-and-other-frames", "layer", "layer"),
     ("ec.color.blackwhite", "filter", "gpu", "frame", "layer", "layer"),
     ("ec.color.brightnesscontrast", "filter", "gpu", "frame", "layer", "layer"),
     ("ec.color.broadcast", "filter", "gpu", "frame", "layer", "layer"),
@@ -183,7 +189,7 @@ const BUILT_IN: &[Row] = &[
     ("ec.color.photofilter", "filter", "gpu", "frame", "layer", "layer"),
     ("ec.color.psarbitrarymap", "filter", "gpu", "frame", "layer", "layer"),
     ("ec.color.selectivecolor", "filter", "gpu", "frame", "layer", "layer"),
-    ("ec.color.shadowhighlight", "filter", "gpu", "neighbours", "layer", "layer"),
+    ("ec.color.shadowhighlight", "filter", "gpu", "clock-and-other-frames", "layer", "layer"),
     ("ec.color.tint", "filter", "gpu", "frame", "layer", "layer"),
     ("ec.color.tritone", "filter", "gpu", "frame", "layer", "layer"),
     ("ec.color.vibrance", "filter", "gpu", "frame", "layer", "layer"),
@@ -225,7 +231,7 @@ const BUILT_IN: &[Row] = &[
     ("ec.distort.puppet", "filter", "cpu", "frame", "layer", "layer"),
     ("ec.distort.reshape", "filter", "gpu", "frame", "layer", "layer"),
     ("ec.distort.ripple", "filter", "gpu", "clock", "layer", "layer"),
-    ("ec.distort.rollingshutterrepair", "filter", "cpu", "neighbours", "layer", "layer"),
+    ("ec.distort.rollingshutterrepair", "filter", "cpu", "clock-and-other-frames", "layer", "layer"),
     ("ec.distort.smear", "filter", "gpu", "frame", "layer", "layer"),
     ("ec.distort.spherize", "filter", "gpu", "frame", "layer", "layer"),
     ("ec.distort.transform", "filter", "gpu", "clock", "layer", "layer"),
@@ -234,7 +240,7 @@ const BUILT_IN: &[Row] = &[
     ("ec.distort.twirllegacy", "filter", "gpu", "frame", "layer", "layer"),
     ("ec.distort.upscale", "filter", "cpu", "frame", "layer", "layer"),
     ("ec.distort.warp", "filter", "gpu", "frame", "layer", "layer"),
-    ("ec.distort.warpstabilizer", "filter", "cpu", "neighbours", "layer", "layer"),
+    ("ec.distort.warpstabilizer", "filter", "cpu", "clock-and-other-frames", "layer", "layer"),
     ("ec.distort.wavewarp", "filter", "gpu", "clock", "layer", "layer"),
     ("ec.generate.advancedlightning", "filter", "gpu", "frame", "layer", "layer"),
     ("ec.generate.audiospectrum", "filter", "gpu", "clock", "layer", "layer"),
@@ -278,10 +284,10 @@ const BUILT_IN: &[Row] = &[
     ("ec.key.unmult", "filter", "gpu", "frame", "layer", "layer"),
     ("ec.keying.keylight", "filter", "gpu", "frame", "layer", "layer"),
     ("ec.matte.mattechoker", "filter", "gpu", "frame", "layer", "layer"),
-    ("ec.matte.objectmatte", "filter", "cpu", "neighbours", "layer", "layer"),
-    ("ec.matte.refinehard", "filter", "gpu", "neighbours", "layer", "layer"),
-    ("ec.matte.refinesoft", "filter", "gpu", "neighbours", "layer", "layer"),
-    ("ec.matte.rotobrush", "filter", "cpu", "neighbours", "layer", "layer"),
+    ("ec.matte.objectmatte", "filter", "cpu", "clock-and-other-frames", "layer", "layer"),
+    ("ec.matte.refinehard", "filter", "gpu", "clock-and-other-frames", "layer", "layer"),
+    ("ec.matte.refinesoft", "filter", "gpu", "clock-and-other-frames", "layer", "layer"),
+    ("ec.matte.rotobrush", "filter", "cpu", "clock-and-other-frames", "layer", "layer"),
     ("ec.matte.simplechoker", "filter", "gpu", "frame", "layer", "layer"),
     ("ec.noise.addgrain", "filter", "gpu", "clock", "layer", "layer"),
     ("ec.noise.curlnoise", "filter", "gpu", "frame", "layer", "layer"),
@@ -294,7 +300,7 @@ const BUILT_IN: &[Row] = &[
     ("ec.noise.noisealpha", "filter", "gpu", "clock", "layer", "layer"),
     ("ec.noise.noisehls", "filter", "gpu", "frame", "layer", "layer"),
     ("ec.noise.noisehlsauto", "filter", "gpu", "clock", "layer", "layer"),
-    ("ec.noise.removegrain", "filter", "gpu", "neighbours", "layer", "layer"),
+    ("ec.noise.removegrain", "filter", "gpu", "clock-and-other-frames", "layer", "layer"),
     ("ec.noise.turbulent", "filter", "gpu", "frame", "layer", "layer"),
     ("ec.obsolete.basic3d", "filter", "gpu", "frame", "layer", "layer"),
     ("ec.obsolete.basictext", "filter", "gpu", "frame", "layer", "layer"),
@@ -313,24 +319,24 @@ const BUILT_IN: &[Row] = &[
     ("ec.perspective.ccspotlight", "filter", "gpu", "frame", "layer", "layer"),
     ("ec.perspective.dropshadow", "filter", "gpu", "frame", "layer", "own-margins"),
     ("ec.perspective.radialshadow", "filter", "gpu", "frame", "layer", "layer"),
-    ("ec.sim.carddance", "filter", "gpu", "neighbours", "comp-scene", "layer"),
-    ("ec.sim.caustics", "filter", "gpu", "neighbours", "comp-scene", "layer"),
-    ("ec.sim.ccballaction", "filter", "gpu", "neighbours", "layer", "layer"),
-    ("ec.sim.ccbubbles", "filter", "gpu", "neighbours", "layer", "layer"),
-    ("ec.sim.ccdrizzle", "filter", "gpu", "neighbours", "layer", "layer"),
-    ("ec.sim.cchair", "filter", "gpu", "neighbours", "layer", "layer"),
-    ("ec.sim.ccmrmercury", "filter", "gpu", "history", "layer", "layer"),
-    ("ec.sim.ccparticlesystems2", "filter", "gpu", "history", "layer", "layer"),
-    ("ec.sim.ccparticleworld", "filter", "gpu", "history", "comp-scene", "layer"),
-    ("ec.sim.ccpixelpolly", "filter", "gpu", "neighbours", "layer", "layer"),
-    ("ec.sim.ccrainfall", "filter", "gpu", "neighbours", "layer", "layer"),
-    ("ec.sim.ccscatterize", "filter", "gpu", "neighbours", "layer", "layer"),
-    ("ec.sim.ccsnowfall", "filter", "gpu", "neighbours", "layer", "layer"),
-    ("ec.sim.ccstarburst", "filter", "gpu", "neighbours", "layer", "layer"),
-    ("ec.sim.foam", "filter", "gpu", "neighbours", "layer", "layer"),
-    ("ec.sim.particleplayground", "filter", "gpu", "neighbours", "layer", "layer"),
-    ("ec.sim.shatter", "filter", "gpu", "neighbours", "comp-scene", "layer"),
-    ("ec.sim.waveworld", "filter", "gpu", "neighbours", "layer", "layer"),
+    ("ec.sim.carddance", "filter", "gpu", "clock-and-other-frames", "comp-scene", "layer"),
+    ("ec.sim.caustics", "filter", "gpu", "clock-and-other-frames", "comp-scene", "layer"),
+    ("ec.sim.ccballaction", "filter", "gpu", "clock-and-other-frames", "layer", "layer"),
+    ("ec.sim.ccbubbles", "filter", "gpu", "clock-and-other-frames", "layer", "layer"),
+    ("ec.sim.ccdrizzle", "filter", "gpu", "clock-and-other-frames", "layer", "layer"),
+    ("ec.sim.cchair", "filter", "gpu", "clock-and-other-frames", "layer", "layer"),
+    ("ec.sim.ccmrmercury", "filter", "gpu", "other-times-unkeyed", "layer", "layer"),
+    ("ec.sim.ccparticlesystems2", "filter", "gpu", "other-times-unkeyed", "layer", "layer"),
+    ("ec.sim.ccparticleworld", "filter", "gpu", "other-times-unkeyed", "comp-scene", "layer"),
+    ("ec.sim.ccpixelpolly", "filter", "gpu", "clock-and-other-frames", "layer", "layer"),
+    ("ec.sim.ccrainfall", "filter", "gpu", "clock-and-other-frames", "layer", "layer"),
+    ("ec.sim.ccscatterize", "filter", "gpu", "clock-and-other-frames", "layer", "layer"),
+    ("ec.sim.ccsnowfall", "filter", "gpu", "clock-and-other-frames", "layer", "layer"),
+    ("ec.sim.ccstarburst", "filter", "gpu", "clock-and-other-frames", "layer", "layer"),
+    ("ec.sim.foam", "filter", "gpu", "clock-and-other-frames", "layer", "layer"),
+    ("ec.sim.particleplayground", "filter", "gpu", "clock-and-other-frames", "layer", "layer"),
+    ("ec.sim.shatter", "filter", "gpu", "clock-and-other-frames", "comp-scene", "layer"),
+    ("ec.sim.waveworld", "filter", "gpu", "clock-and-other-frames", "layer", "layer"),
     ("ec.stylize.brushstrokes", "filter", "gpu", "frame", "layer", "layer"),
     ("ec.stylize.cartoon", "filter", "gpu", "frame", "layer", "layer"),
     ("ec.stylize.ccblockload", "filter", "gpu", "frame", "layer", "layer"),
@@ -358,14 +364,14 @@ const BUILT_IN: &[Row] = &[
     ("ec.stylize.threshold", "filter", "gpu", "frame", "layer", "layer"),
     ("ec.text.numbers", "filter", "gpu", "clock", "layer", "layer"),
     ("ec.text.timecode", "filter", "gpu", "clock", "layer", "layer"),
-    ("ec.time.ccforcemotionblur", "filter", "gpu", "history", "layer", "layer"),
-    ("ec.time.ccwidetime", "filter", "gpu", "history", "layer", "layer"),
-    ("ec.time.echo", "filter", "gpu", "history", "layer", "layer"),
-    ("ec.time.pixelmotionblur", "filter", "gpu", "history", "layer", "layer"),
-    ("ec.time.posterizetime", "filter", "gpu", "history", "layer", "layer"),
-    ("ec.time.timedifference", "filter", "gpu", "history", "layer", "layer"),
-    ("ec.time.timedisplacement", "filter", "gpu", "history", "layer", "layer"),
-    ("ec.time.timewarp", "filter", "gpu", "history", "layer", "layer"),
+    ("ec.time.ccforcemotionblur", "filter", "gpu", "other-times-unkeyed", "layer", "layer"),
+    ("ec.time.ccwidetime", "filter", "gpu", "other-times-unkeyed", "layer", "layer"),
+    ("ec.time.echo", "filter", "gpu", "other-times-unkeyed", "layer", "layer"),
+    ("ec.time.pixelmotionblur", "filter", "gpu", "other-times-unkeyed", "layer", "layer"),
+    ("ec.time.posterizetime", "filter", "gpu", "other-times-unkeyed", "layer", "layer"),
+    ("ec.time.timedifference", "filter", "gpu", "other-times-unkeyed", "layer", "layer"),
+    ("ec.time.timedisplacement", "filter", "gpu", "other-times-unkeyed", "layer", "layer"),
+    ("ec.time.timewarp", "filter", "gpu", "other-times-unkeyed", "layer", "layer"),
     ("ec.transition.blockdissolve", "filter", "gpu", "frame", "layer", "layer"),
     ("ec.transition.cardwipe", "filter", "gpu", "clock", "comp-scene", "layer"),
     ("ec.transition.ccglasswipe", "filter", "gpu", "frame", "layer", "layer"),

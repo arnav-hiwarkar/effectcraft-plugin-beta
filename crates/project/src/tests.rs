@@ -569,12 +569,12 @@ fn add_effect(l: &mut crate::Layer, fx: crate::PropGroup) {
 
 fn declared(id: &str) -> Option<crate::Declared> {
     match id {
-        "ec.time.echo" => Some(crate::Declared::CPU.time(crate::TimeReach::History)),
-        "ec.color.autolevels" => Some(crate::Declared::CPU.time(crate::TimeReach::Neighbours)),
-        "ec.noise.noise" => Some(crate::Declared::CPU.time(crate::TimeReach::Clock)),
-        "ec.audio.delay" => Some(crate::Declared::AUDIO),
+        "ec.time.echo" => Some(crate::Declared::Filter(crate::Visual::CPU.time(crate::TimeReach::OtherTimesUnkeyed))),
+        "ec.color.autolevels" => Some(crate::Declared::Filter(crate::Visual::CPU.time(crate::TimeReach::ClockAndOtherFrames))),
+        "ec.noise.noise" => Some(crate::Declared::Filter(crate::Visual::CPU.time(crate::TimeReach::Clock))),
+        "ec.audio.delay" => Some(crate::Declared::Audio),
         "org.example.missing" => None,
-        _ => Some(crate::Declared::CPU),
+        _ => Some(crate::Declared::Filter(crate::Visual::CPU)),
     }
 }
 

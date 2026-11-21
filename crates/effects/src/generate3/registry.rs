@@ -5,7 +5,7 @@ use super::fractal::{FRACTAL_OVERSAMPLE, FRACTAL_PALETTES, FRACTAL_SETS, fractal
 use super::paths::{scribble, stroke, vegas, write_on};
 use super::raster::{END_CAPS, JOINS};
 use super::{EffectSpec, ParamUi, Value, col, num, p, popup, slider};
-use crate::{Declared, TimeReach};
+use crate::{Declared, TimeReach, Visual};
 
 // ---------------------------------------------------------------- registry
 
@@ -19,7 +19,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.generate.fractal",
             "Fractal",
-            Declared::CPU,
+            Declared::Filter(Visual::CPU),
             vec![
                 p("setChoice", "Set Choice", Value::Enum(0), popup(&FRACTAL_SETS)),
                 p("equation", "Equation", Value::Enum(0), popup(&["z = z^2 + c", "z = z^3 + c", "z = z^4 + c"])),
@@ -48,7 +48,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.generate.scribble",
             "Scribble",
-            Declared::GPU,
+            Declared::Filter(Visual::GPU),
             vec![
                 p("scribble", "Scribble", Value::Enum(0), popup(&["Single Mask", "All Masks", "All Masks Using Modes"])),
                 mask_idx("mask", "Mask", 1.0),
@@ -81,7 +81,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.generate.stroke",
             "Stroke",
-            Declared::GPU,
+            Declared::Filter(Visual::GPU),
             vec![
                 mask_idx("path", "Path", 1.0),
                 check("allMasks", "All Masks", false),
@@ -100,7 +100,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.generate.vegas",
             "Vegas",
-            Declared::GPU,
+            Declared::Filter(Visual::GPU),
             vec![
                 p("stroke", "Stroke", Value::Enum(0), popup(&["Image Contours", "Mask/Path"])),
                 p("inputLayer", "Image Contours: Input Layer", Value::Layer(None), ParamUi::Layer),
@@ -134,7 +134,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.generate.writeon",
             "Write-on",
-            Declared::GPU,
+            Declared::Filter(Visual::GPU),
             vec![
                 p("brushPosition", "Brush Position", pt(0.5, 0.5), ParamUi::Point),
                 p("color", "Color", col(1.0, 1.0, 1.0), ParamUi::Color),
@@ -152,7 +152,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.generate.paintbucket",
             "Paint Bucket",
-            Declared::GPU,
+            Declared::Filter(Visual::GPU),
             vec![
                 p("fillPoint", "Fill Point", pt(0.5, 0.5), ParamUi::Point),
                 p("fillSelector", "Fill Selector", Value::Enum(0), popup(&["Color & Alpha", "Straight Color", "Transparency", "Opacity", "Alpha Channel"])),
@@ -176,7 +176,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.generate.eyedropperfill",
             "Eyedropper Fill",
-            Declared::GPU,
+            Declared::Filter(Visual::GPU),
             vec![
                 p("samplePoint", "Sample Point", pt(0.5, 0.5), ParamUi::Point),
                 p("sampleRadius", "Sample Radius", num(0.0), slider(0.0, 1000.0, 0.0, 100.0, 1)),
@@ -189,7 +189,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.generate.ccgluegun",
             "Paint Beads",
-            Declared::GPU,
+            Declared::Filter(Visual::GPU),
             vec![
                 p("brushPosition", "Brush Position", pt(0.5, 0.5), ParamUi::Point),
                 p("strokeWidth", "Stroke Width", num(25.0), slider(0.0, 500.0, 0.0, 100.0, 1)),
@@ -204,7 +204,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.generate.ccthreads",
             "Woven Threads",
-            Declared::GPU,
+            Declared::Filter(Visual::GPU),
             vec![
                 p("width", "Width", num(50.0), slider(1.0, 1000.0, 1.0, 200.0, 1)),
                 p("height", "Height", num(50.0), slider(1.0, 1000.0, 1.0, 200.0, 1)),
@@ -220,7 +220,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.generate.audiospectrum",
             "Audio Spectrum",
-            Declared::GPU.time(TimeReach::Clock),
+            Declared::Filter(Visual::GPU.time(TimeReach::Clock)),
             vec![
                 p("audioLayer", "Audio Layer", Value::Layer(None), ParamUi::Layer),
                 p("startPoint", "Start Point", pt(0.1, 0.5), ParamUi::Point),
@@ -251,7 +251,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.generate.audiowaveform",
             "Audio Waveform",
-            Declared::GPU.time(TimeReach::Clock),
+            Declared::Filter(Visual::GPU.time(TimeReach::Clock)),
             vec![
                 p("audioLayer", "Audio Layer", Value::Layer(None), ParamUi::Layer),
                 p("startPoint", "Start Point", pt(0.1, 0.5), ParamUi::Point),

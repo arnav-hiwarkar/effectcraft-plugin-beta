@@ -9,7 +9,7 @@ use rayon::prelude::*;
 
 use crate::noise::{GrainLook, draw_boxes, fbm, grain_params, median_image, preview_params, sampling_boxes, sampling_params};
 use crate::util::{Plane, gauss_plane, layer_or_self, premul, unpremul};
-use crate::{Buf, Declared, EffectCtx, EffectSpec, num, p, popup, slider};
+use crate::{Buf, Declared, EffectCtx, EffectSpec, Visual, num, p, popup, slider};
 
 fn spec(id: &'static str, name: &'static str, declared: Declared, params: Vec<crate::ParamSpec>, render: crate::RenderFn) -> EffectSpec {
     EffectSpec { id, name, category: "Noise & Grain", params, render, declared, float: true }
@@ -334,7 +334,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.noise.matchgrain",
             "Match Grain",
-            Declared::CPU,
+            Declared::Filter(Visual::CPU),
             vec![
                 p("viewingMode", "Viewing Mode", Value::Enum(4), popup(&MATCH_GRAIN_VIEWS)),
                 p("noiseSourceLayer", "Noise Source Layer", Value::Layer(None), ParamUi::Layer),
@@ -349,7 +349,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.noise.medianlegacy",
             "Median (Legacy)",
-            Declared::GPU,
+            Declared::Filter(Visual::GPU),
             vec![
                 p("radius", "Radius", num(1.0), slider(0.0, 255.0, 0.0, 20.0, 0)),
                 p("operateOnAlphaChannel", "Operate On Alpha Channel", Value::Bool(false), ParamUi::Checkbox),
@@ -359,7 +359,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.noise.curlnoise",
             "Curl Noise",
-            Declared::GPU,
+            Declared::Filter(Visual::GPU),
             vec![
                 p("view", "View", Value::Enum(0), popup(&["Final Output", "Flow Field"])),
                 p("displacementAmount", "Displacement Amount", num(20.0), slider(-1000.0, 1000.0, -100.0, 100.0, 1)),

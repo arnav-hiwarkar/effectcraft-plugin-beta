@@ -13,7 +13,7 @@ use effectcraft_raster::Px;
 use rayon::prelude::*;
 
 use crate::util::{Plane, Rng, gauss_plane, hash1, layer_rect, lerp3, map_xy, smoothstep, unpremul};
-use crate::{Buf, Declared, EffectCtx, EffectSpec, TimeReach, col, num, p, popup, slider};
+use crate::{Buf, Declared, EffectCtx, EffectSpec, TimeReach, Visual, col, num, p, popup, slider};
 
 fn spec(id: &'static str, name: &'static str, declared: Declared, params: Vec<crate::ParamSpec>, render: crate::RenderFn) -> EffectSpec {
     EffectSpec { id, name, category: "Generate", params, render, declared, float: true }
@@ -1059,7 +1059,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.generate.cellpattern",
             "Cell Pattern",
-            Declared::GPU,
+            Declared::Filter(Visual::GPU),
             vec![
                 p("cellPattern", "Cell Pattern", Value::Enum(0), popup(&CELL_PATTERNS)),
                 p("invert", "Invert", Value::Bool(false), ParamUi::Checkbox),
@@ -1081,7 +1081,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.generate.ellipse",
             "Ellipse",
-            Declared::GPU,
+            Declared::Filter(Visual::GPU),
             vec![
                 p("center", "Center", pt(0.5, 0.5), ParamUi::Point),
                 p("width", "Width", num(100.0), slider(0.0, 30000.0, 0.0, 1000.0, 1)),
@@ -1097,7 +1097,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.generate.lensflare",
             "Lens Flare",
-            Declared::GPU,
+            Declared::Filter(Visual::GPU),
             vec![
                 p("flareCenter", "Flare Center", pt(0.25, 0.25), ParamUi::Point),
                 p("flareBrightness", "Flare Brightness", num(100.0), slider(0.0, 300.0, 10.0, 300.0, 0)),
@@ -1109,7 +1109,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.generate.beam",
             "Beam",
-            Declared::GPU,
+            Declared::Filter(Visual::GPU),
             vec![
                 p("startPoint", "Starting Point", pt(0.25, 0.5), ParamUi::Point),
                 p("endPoint", "Ending Point", pt(0.75, 0.5), ParamUi::Point),
@@ -1128,7 +1128,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.generate.radiowaves",
             "Radio Waves",
-            Declared::GPU.time(TimeReach::Clock),
+            Declared::Filter(Visual::GPU.time(TimeReach::Clock)),
             vec![
                 p("producerPoint", "Producer Point", pt(0.5, 0.5), ParamUi::Point),
                 p("parametersAreSetAt", "Parameters Are Set At", Value::Enum(1), popup(&["Birth", "Each Frame"])),
@@ -1167,7 +1167,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.generate.advancedlightning",
             "Advanced Lightning",
-            Declared::GPU,
+            Declared::Filter(Visual::GPU),
             vec![
                 p("lightningType", "Lightning Type", Value::Enum(1), popup(&LIGHTNING_TYPES)),
                 p("origin", "Origin", pt(0.25, 0.2), ParamUi::Point),
@@ -1199,7 +1199,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.generate.cclightrays",
             "Light Rays",
-            Declared::GPU,
+            Declared::Filter(Visual::GPU),
             vec![
                 p("intensity", "Intensity", num(100.0), slider(0.0, 600.0, 0.0, 200.0, 1)),
                 p("center", "Center", pt(0.5, 0.5), ParamUi::Point),
@@ -1215,7 +1215,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.generate.cclightburst",
             "Radial Light Burst",
-            Declared::GPU,
+            Declared::Filter(Visual::GPU),
             vec![
                 p("center", "Center", pt(0.5, 0.5), ParamUi::Point),
                 p("intensity", "Intensity", num(100.0), slider(0.0, 600.0, 0.0, 200.0, 1)),
@@ -1229,7 +1229,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.generate.cclightsweep",
             "Light Sweep",
-            Declared::GPU,
+            Declared::Filter(Visual::GPU),
             vec![
                 p("center", "Center", pt(0.5, 0.5), ParamUi::Point),
                 p("direction", "Direction", num(-30.0), ang()),

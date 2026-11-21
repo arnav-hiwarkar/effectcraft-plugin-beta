@@ -33,7 +33,7 @@ use effectcraft_project::{GroupKind, Node, ParamUi, PropGroup, Property};
 use effectcraft_raster::{Image, Px};
 use rayon::prelude::*;
 
-use crate::{Buf, Declared, EffectCtx, EffectSpec, Params, TimeReach, p, popup, slider};
+use crate::{Buf, Declared, EffectCtx, EffectSpec, Params, TimeReach, Visual, p, popup, slider};
 
 /// Effect id of the Paint effect.
 pub const ID: &str = "ec.paint.paint";
@@ -152,7 +152,7 @@ pub fn specs() -> Vec<EffectSpec> {
         category: "Paint",
         params: vec![p("on_transparent", "Paint on Transparent", Value::Bool(false), ParamUi::Checkbox)],
         render,
-        declared: Declared::CPU.time(TimeReach::OtherFrames),
+        declared: Declared::Filter(Visual::CPU.time(TimeReach::OtherFrames)),
         float: true,
     }]
 }

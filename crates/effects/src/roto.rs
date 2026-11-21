@@ -37,7 +37,7 @@ use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::warp_stab::param;
-use crate::{Buf, Declared, EffectCtx, EffectSpec, Params, TimeReach, num, p, popup, slider};
+use crate::{Buf, Declared, EffectCtx, EffectSpec, Params, TimeReach, Visual, num, p, popup, slider};
 
 pub use effectcraft_track::roto::{FrameSeg, Stroke, StrokeKind};
 
@@ -104,7 +104,7 @@ pub fn specs() -> Vec<EffectSpec> {
             p(TRACKED, "Tracked", Value::Str(String::new()), ParamUi::Hidden),
         ],
         render,
-        declared: Declared::CPU.time(TimeReach::Neighbours),
+        declared: Declared::Filter(Visual::CPU.time(TimeReach::ClockAndOtherFrames)),
         float: true,
     }]
 }

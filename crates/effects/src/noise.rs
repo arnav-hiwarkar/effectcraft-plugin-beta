@@ -8,7 +8,7 @@ use rayon::prelude::*;
 
 use crate::generate::value_noise;
 use crate::util::{Plane, gauss_plane, guided_filter, hash1, join, lerp, premul, smoothstep, split, unpremul};
-use crate::{Buf, Declared, EffectCtx, EffectSpec, TimeReach, num, p, popup, slider};
+use crate::{Buf, Declared, EffectCtx, EffectSpec, TimeReach, Visual, num, p, popup, slider};
 
 fn spec(id: &'static str, name: &'static str, declared: Declared, params: Vec<crate::ParamSpec>, render: crate::RenderFn) -> EffectSpec {
     EffectSpec { id, name, category: "Noise & Grain", params, render, declared, float: true }
@@ -786,7 +786,7 @@ pub fn specs() -> Vec<EffectSpec> {
             spec(
                 "ec.noise.addgrain",
                 "Add Grain",
-                Declared::GPU.time(TimeReach::Clock),
+                Declared::Filter(Visual::GPU.time(TimeReach::Clock)),
                 [head, preview_params(), tweaking, color, application, animation].into_iter().flatten().collect(),
                 add_grain,
             )
@@ -794,7 +794,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.noise.median",
             "Median",
-            Declared::GPU,
+            Declared::Filter(Visual::GPU),
             vec![
                 p("radius", "Radius", num(0.0), slider(0.0, 255.0, 0.0, 50.0, 0)),
                 p("operateOnAlpha", "Operate On Alpha Channel", Value::Bool(false), ParamUi::Checkbox),
@@ -804,7 +804,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.noise.dustscratches",
             "Dust & Scratches",
-            Declared::GPU,
+            Declared::Filter(Visual::GPU),
             vec![
                 p("radius", "Radius", num(1.0), slider(0.0, 255.0, 0.0, 50.0, 0)),
                 p("threshold", "Threshold", num(0.0), slider(0.0, 255.0, 0.0, 255.0, 0)),
@@ -815,7 +815,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.noise.removegrain",
             "Remove Grain",
-            Declared::GPU.time(TimeReach::Neighbours),
+            Declared::Filter(Visual::GPU.time(TimeReach::ClockAndOtherFrames)),
             [
                 vec![p("viewingMode", "Viewing Mode", Value::Enum(3), popup(&REMOVE_GRAIN_VIEWS))],
                 preview_params(),
@@ -841,7 +841,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.noise.noisealpha",
             "Noise Alpha",
-            Declared::GPU.time(TimeReach::Clock),
+            Declared::Filter(Visual::GPU.time(TimeReach::Clock)),
             vec![
                 p("noise", "Noise", Value::Enum(0), popup(&["Uniform Random", "Squared Random", "Uniform Animation", "Squared Animation"])),
                 p("amount", "Amount", num(0.0), pct()),
@@ -854,8 +854,8 @@ pub fn specs() -> Vec<EffectSpec> {
             ],
             noise_alpha,
         ),
-        spec("ec.noise.noisehls", "Noise HLS", Declared::GPU, hls, noise_hls),
-        spec("ec.noise.noisehlsauto", "Noise HLS Auto", Declared::GPU.time(TimeReach::Clock), hls_auto, noise_hls_auto),
+        spec("ec.noise.noisehls", "Noise HLS", Declared::Filter(Visual::GPU), hls, noise_hls),
+        spec("ec.noise.noisehlsauto", "Noise HLS Auto", Declared::Filter(Visual::GPU.time(TimeReach::Clock)), hls_auto, noise_hls_auto),
     ]
 }
 

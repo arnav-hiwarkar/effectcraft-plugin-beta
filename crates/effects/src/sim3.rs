@@ -29,7 +29,7 @@ use rayon::prelude::*;
 
 use crate::sim::{Acc, Post, SPS, Shape, Sprite, SpritePlan, Tint, combine, splat, steps_at};
 use crate::util::{SimCache, hash1, params_key, point_in_poly, unpremul};
-use crate::{Buf, Declared, EffectCtx, EffectSpec, TimeReach, col, num, p, popup, slider};
+use crate::{Buf, Declared, EffectCtx, EffectSpec, TimeReach, Visual, col, num, p, popup, slider};
 
 fn spec(id: &'static str, name: &'static str, declared: Declared, params: Vec<crate::ParamSpec>, render: crate::RenderFn) -> EffectSpec {
     EffectSpec { id, name, category: "Simulation", params, render, declared, float: true }
@@ -1141,11 +1141,11 @@ pub fn specs() -> Vec<EffectSpec> {
     pg.push(p("randomSeed", "Random Seed", num(0.0), slider(0.0, 10000.0, 0.0, 1000.0, 0)));
     let pc = |d: f64| (num(d), slider(0.0, 100.0, 0.0, 100.0, 1));
     vec![
-        spec("ec.sim.particleplayground", "Particle Playground", Declared::GPU.time(TimeReach::Neighbours), pg, particle_playground),
+        spec("ec.sim.particleplayground", "Particle Playground", Declared::Filter(Visual::GPU.time(TimeReach::ClockAndOtherFrames)), pg, particle_playground),
         spec(
             "ec.sim.cchair",
             "Surface Fibers",
-            Declared::GPU.time(TimeReach::Neighbours),
+            Declared::Filter(Visual::GPU.time(TimeReach::ClockAndOtherFrames)),
             vec![
                 sp("length", "Length", px(30.0, 200.0)),
                 p("thickness", "Thickness", num(1.0), slider(0.05, 20.0, 0.1, 5.0, 2)),

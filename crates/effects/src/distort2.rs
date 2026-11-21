@@ -21,7 +21,7 @@ use rayon::prelude::*;
 
 use crate::generate::value_noise_linear_z;
 use crate::util::{SRC_NAMES, Src, fit_layer, layer_cover_pad, layer_rect, lerp4, map_xy, pick, premul, remap, smoothstep, src_at, unpremul};
-use crate::{Buf, Cover, Declared, EffectCtx, EffectSpec, col, num, p, popup, slider};
+use crate::{Buf, Cover, Declared, EffectCtx, EffectSpec, Visual, col, num, p, popup, slider};
 
 fn spec(id: &'static str, name: &'static str, declared: Declared, params: Vec<crate::ParamSpec>, render: crate::RenderFn) -> EffectSpec {
     EffectSpec { id, name, category: "Distort", params, render, declared, float: true }
@@ -752,7 +752,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.distort.turbulentdisplace",
             "Turbulent Displace",
-            Declared::GPU.cover(Cover::OwnMargins),
+            Declared::Filter(Visual::GPU.cover(Cover::OwnMargins)),
             vec![
                 p("displacement", "Displacement", Value::Enum(0), popup(&TURBULENT_KINDS)),
                 p("amount", "Amount", num(50.0), slider(-10000.0, 10000.0, -200.0, 200.0, 1)),
@@ -771,7 +771,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.distort.displacementmap",
             "Displacement Map",
-            Declared::GPU,
+            Declared::Filter(Visual::GPU),
             vec![
                 p("displacementMapLayer", "Displacement Map Layer", Value::Layer(None), ParamUi::Layer),
                 // The map layer is read without its masks or effects.
@@ -789,7 +789,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.distort.opticscompensation",
             "Optics Compensation",
-            Declared::GPU,
+            Declared::Filter(Visual::GPU),
             vec![
                 p("fieldOfView", "Field Of View (FOV)", num(0.0), slider(0.0, 180.0, 0.0, 180.0, 1)),
                 p("reverseLensDistortion", "Reverse Lens Distortion", Value::Bool(false), ParamUi::Checkbox),
@@ -803,7 +803,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.distort.magnify",
             "Magnify",
-            Declared::GPU,
+            Declared::Filter(Visual::GPU),
             vec![
                 p("shape", "Shape", Value::Enum(0), popup(&["Circle", "Square"])),
                 p("center", "Center", pt(0.5, 0.5), ParamUi::Point),
@@ -821,7 +821,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.distort.meshwarp",
             "Mesh Warp",
-            Declared::GPU,
+            Declared::Filter(Visual::GPU),
             vec![
                 p("rows", "Rows", num(7.0), slider(1.0, 31.0, 1.0, 31.0, 0)),
                 p("columns", "Columns", num(7.0), slider(1.0, 31.0, 1.0, 31.0, 0)),
@@ -833,7 +833,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.distort.bezierwarp",
             "Bezier Warp",
-            Declared::GPU,
+            Declared::Filter(Visual::GPU),
             vec![
                 p("topLeftVertex", "Top Left Vertex", pt(0.0, 0.0), ParamUi::Point),
                 p("topLeftTangent", "Top Left Tangent", pt(1.0 / 3.0, 0.0), ParamUi::Point),
@@ -854,7 +854,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.distort.ccbendit",
             "Two-Point Bend",
-            Declared::GPU,
+            Declared::Filter(Visual::GPU),
             vec![
                 p("bend", "Bend", num(0.0), ParamUi::Angle),
                 p("start", "Start", pt(0.5, 0.2), ParamUi::Point),
@@ -866,7 +866,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.distort.cclens",
             "Lens Distortion",
-            Declared::GPU,
+            Declared::Filter(Visual::GPU),
             vec![
                 p("center", "Center", pt(0.5, 0.5), ParamUi::Point),
                 p("size", "Size", num(50.0), slider(0.0, 400.0, 0.0, 200.0, 1)),
@@ -877,7 +877,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.distort.ccpageturn",
             "Page Curl",
-            Declared::GPU,
+            Declared::Filter(Visual::GPU),
             vec![
                 p("foldPosition", "Fold Position", pt(0.7, 0.7), ParamUi::Point),
                 p("foldDirection", "Fold Direction", num(315.0), ParamUi::Angle),
@@ -892,7 +892,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.distort.cctiler",
             "Scaled Tiles",
-            Declared::GPU,
+            Declared::Filter(Visual::GPU),
             vec![
                 p("scale", "Scale", num(50.0), slider(1.0, 10000.0, 1.0, 200.0, 1)),
                 p("center", "Center", pt(0.5, 0.5), ParamUi::Point),
@@ -903,7 +903,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.distort.ccgriddler",
             "Tile Grid",
-            Declared::GPU,
+            Declared::Filter(Visual::GPU),
             vec![
                 p("horizontalScale", "Horizontal Scale", num(100.0), slider(1.0, 1000.0, 1.0, 400.0, 1)),
                 p("verticalScale", "Vertical Scale", num(100.0), slider(1.0, 1000.0, 1.0, 400.0, 1)),

@@ -26,7 +26,7 @@ use effectcraft_raster::{AuxChannels, Image, Px, gaussian_blur};
 use rayon::prelude::*;
 
 use crate::util::{Plane, gauss_plane, hash1, premul, unpremul};
-use crate::{Buf, Declared, EffectCtx, EffectSpec, col, num, p, popup, slider};
+use crate::{Buf, Declared, EffectCtx, EffectSpec, Visual, col, num, p, popup, slider};
 
 fn spec(id: &'static str, name: &'static str, declared: Declared, params: Vec<crate::ParamSpec>, render: crate::RenderFn) -> EffectSpec {
     EffectSpec { id, name, category: "3D Channel", params, render, declared, float: true }
@@ -963,7 +963,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.3d.channelextract",
             "3D Channel Extract",
-            Declared::GPU,
+            Declared::Filter(Visual::GPU),
             vec![
                 p("channel", "3D Channel", Value::Enum(0), popup(&EXTRACT_CHANNELS)),
                 p("blackPoint", "Black Point", num(0.0), slider(-1.0e6, 1.0e6, -10000.0, 10000.0, 2)),
@@ -977,7 +977,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.3d.cryptomatte",
             "Cryptomatte",
-            Declared::GPU,
+            Declared::Filter(Visual::GPU),
             vec![
                 p("layer", "Layer", Value::Enum(0), popup(&CRYPTO_LAYERS)),
                 text("selection", "Selection", ""),
@@ -994,7 +994,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.3d.depthmatte",
             "Depth Matte",
-            Declared::GPU,
+            Declared::Filter(Visual::GPU),
             vec![
                 p("depth", "Depth", num(0.0), slider(-1.0e6, 1.0e6, -10000.0, 10000.0, 2)),
                 p("feather", "Feather", num(0.0), slider(0.0, 1.0e6, 0.0, 1000.0, 2)),
@@ -1005,7 +1005,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.3d.depthoffield",
             "Depth of Field",
-            Declared::GPU,
+            Declared::Filter(Visual::GPU),
             vec![
                 p("focalPlane", "Focal Plane", num(0.0), slider(-1.0e6, 1.0e6, 0.0, 10000.0, 2)),
                 p("maximumRadius", "Maximum Radius", num(0.0), slider(0.0, 500.0, 0.0, 50.0, 2)),
@@ -1017,7 +1017,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.3d.extractor",
             "EXtractoR",
-            Declared::GPU,
+            Declared::Filter(Visual::GPU),
             vec![
                 text("red", "Red", "R"),
                 text("green", "Green", "G"),
@@ -1033,7 +1033,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.3d.fog3d",
             "Fog 3D",
-            Declared::GPU,
+            Declared::Filter(Visual::GPU),
             vec![
                 p("fogColor", "Fog Color", col(1.0, 1.0, 1.0), ParamUi::Color),
                 p("fogStartDepth", "Fog Start Depth", num(0.0), slider(-1.0e6, 1.0e6, 0.0, 10000.0, 2)),
@@ -1049,7 +1049,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.3d.idmatte",
             "ID Matte",
-            Declared::GPU,
+            Declared::Filter(Visual::GPU),
             vec![
                 p("auxChannel", "Aux. Channel", Value::Enum(0), popup(&["Object ID", "Material ID"])),
                 p("idSelection", "ID Selection", num(0.0), slider(0.0, 65535.0, 0.0, 100.0, 0)),
@@ -1062,7 +1062,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.3d.identifier",
             "IDentifier",
-            Declared::GPU,
+            Declared::Filter(Visual::GPU),
             vec![
                 p("channelType", "Channel Type", Value::Enum(0), popup(&["Object ID", "Material ID"])),
                 p("display", "Display", Value::Enum(0), popup(&["Colors", "Luma Matte", "Alpha Matte", "Raw"])),
@@ -1070,7 +1070,13 @@ pub fn specs() -> Vec<EffectSpec> {
             ],
             identifier,
         ),
-        spec("ec.3d.instance3d", "3D Layer Instance", Declared::CPU, vec![p("layer", "Layer", Value::Layer(None), ParamUi::Layer)], instance_3d),
+        spec(
+            "ec.3d.instance3d",
+            "3D Layer Instance",
+            Declared::Filter(Visual::CPU),
+            vec![p("layer", "Layer", Value::Layer(None), ParamUi::Layer)],
+            instance_3d,
+        ),
     ]
 }
 

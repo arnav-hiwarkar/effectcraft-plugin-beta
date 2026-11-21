@@ -232,11 +232,14 @@ collapsed 3D precomps (drawn flattened), morph targets, extruded strokes.
 A **layer cache** keeps each layer's finished pixels (source, masks and effects) keyed by a hash of
 its evaluated inputs, excluding the transform. Static and transform-only layers render once;
 editing one layer re-renders only that layer. Each Render Queue job keeps its own layer cache
-for its frames. Each `EffectSpec` declares its `Declared` metadata in its own registration: its
-role (filter or audio), its routes (CPU, or CPU and GPU), its time reach (frame, clock, other
-frames, neighbours or history), the inputs it reads (its layer, or also the comp scene) and its
+for its frames. Each `EffectSpec` declares its `Declared` metadata in its own registration: an
+audio effect, or a filter with its routes (CPU, or CPU and GPU), its time reach (by what the
+caches do: frame, keyed on the clock, reaching other frames, both, or reading other times the
+key can't see with expressions), the inputs it reads (its layer, or also the comp scene) and its
 cover (the layer rectangle, or its own margins). The caches, the GPU path and the project's dirty
-spans read those fields; nothing keys on effect ids. A test renders every effect at two times
+spans read those fields instead of id lists, though a few id rules remain (an effect reading its
+own parameters past the shutter, the Cryptomatte probe's time effects, the expression controls'
+GPU and migration paths). A test renders every effect at two times
 and fails when one that changes does not declare reading the clock, and `declared_table` pins
 every effect's declared values.
 

@@ -7,7 +7,7 @@ use effectcraft_raster::Image;
 use rayon::prelude::*;
 
 use crate::util::layer_rect;
-use crate::{Buf, Declared, EffectCtx, EffectSpec, TimeReach, num, p, popup, slider};
+use crate::{Buf, Declared, EffectCtx, EffectSpec, TimeReach, Visual, num, p, popup, slider};
 
 fn spec(id: &'static str, name: &'static str, declared: Declared, params: Vec<crate::ParamSpec>, render: crate::RenderFn) -> EffectSpec {
     EffectSpec { id, name, category: "Distort", params, render, declared, float: true }
@@ -424,7 +424,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.distort.twirl",
             "Twirl",
-            Declared::GPU,
+            Declared::Filter(Visual::GPU),
             vec![
                 p("angle", "Angle", num(0.0), ParamUi::Angle),
                 p("radius", "Twirl Radius", num(30.0), slider(0.0, 100.0, 0.0, 100.0, 1)),
@@ -435,14 +435,14 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.distort.spherize",
             "Spherize",
-            Declared::GPU,
+            Declared::Filter(Visual::GPU),
             vec![p("radius", "Radius", num(0.0), slider(0.0, 2500.0, 0.0, 2500.0, 1)), p("center", "Center of Sphere", pt(0.5, 0.5), ParamUi::Point)],
             spherize,
         ),
         spec(
             "ec.distort.bulge",
             "Bulge",
-            Declared::GPU,
+            Declared::Filter(Visual::GPU),
             vec![
                 p("hradius", "Horizontal Radius", num(50.0), slider(0.0, 4000.0, 0.0, 1000.0, 1)),
                 p("vradius", "Vertical Radius", num(50.0), slider(0.0, 4000.0, 0.0, 1000.0, 1)),
@@ -456,7 +456,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.distort.wavewarp",
             "Wave Warp",
-            Declared::GPU.time(TimeReach::Clock),
+            Declared::Filter(Visual::GPU.time(TimeReach::Clock)),
             vec![
                 p("waveType", "Wave Type", Value::Enum(0), popup(&WAVE_TYPES)),
                 p("height", "Wave Height", num(10.0), slider(-1000.0, 1000.0, -100.0, 100.0, 0)),
@@ -471,7 +471,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.distort.ripple",
             "Ripple",
-            Declared::GPU.time(TimeReach::Clock),
+            Declared::Filter(Visual::GPU.time(TimeReach::Clock)),
             vec![
                 p("radius", "Radius", num(50.0), slider(0.0, 100.0, 0.0, 100.0, 1)),
                 p("center", "Center of Ripple", pt(0.5, 0.5), ParamUi::Point),
@@ -486,21 +486,21 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.distort.mirror",
             "Mirror",
-            Declared::GPU,
+            Declared::Filter(Visual::GPU),
             vec![p("center", "Reflection Center", pt(0.5, 0.5), ParamUi::Point), p("angle", "Reflection Angle", num(0.0), ParamUi::Angle)],
             mirror,
         ),
         spec(
             "ec.distort.offset",
             "Offset",
-            Declared::GPU,
+            Declared::Filter(Visual::GPU),
             vec![p("shift", "Shift Center To", pt(0.5, 0.5), ParamUi::Point), p("blend", "Blend With Original", num(0.0), slider(0.0, 100.0, 0.0, 100.0, 1))],
             offset,
         ),
         spec(
             "ec.distort.polar",
             "Polar Coordinates",
-            Declared::GPU,
+            Declared::Filter(Visual::GPU),
             vec![
                 p("interpolation", "Interpolation", num(0.0), slider(0.0, 100.0, 0.0, 100.0, 1)),
                 p("conversion", "Type of Conversion", Value::Enum(0), popup(&["Rect to Polar", "Polar to Rect"])),
@@ -510,7 +510,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.distort.transform",
             "Transform",
-            Declared::GPU.time(TimeReach::Clock),
+            Declared::Filter(Visual::GPU.time(TimeReach::Clock)),
             vec![
                 p("anchor", "Anchor Point", pt(0.5, 0.5), ParamUi::Point),
                 p("position", "Position", pt(0.5, 0.5), ParamUi::Point),
@@ -530,7 +530,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.distort.cornerpin",
             "Corner Pin",
-            Declared::GPU,
+            Declared::Filter(Visual::GPU),
             vec![
                 p("ul", "Upper Left", pt(0.0, 0.0), ParamUi::Point),
                 p("ur", "Upper Right", pt(1.0, 0.0), ParamUi::Point),

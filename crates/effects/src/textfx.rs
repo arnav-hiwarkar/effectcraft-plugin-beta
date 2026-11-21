@@ -15,7 +15,7 @@ use rayon::prelude::*;
 
 use crate::generate3::{Seg, mask_px, poly_segs, raster_segs};
 use crate::util::{Plane, gauss_plane, hash1, poly_length, poly_point_at};
-use crate::{Buf, Declared, EffectCtx, EffectSpec, TimeReach, col, num, p, popup, slider};
+use crate::{Buf, Declared, EffectCtx, EffectSpec, TimeReach, Visual, col, num, p, popup, slider};
 
 fn spec(
     id: &'static str,
@@ -936,7 +936,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.text.numbers",
             "Numbers",
-            Declared::GPU.time(TimeReach::Clock),
+            Declared::Filter(Visual::GPU.time(TimeReach::Clock)),
             "Text",
             vec![
                 p(
@@ -975,7 +975,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.text.timecode",
             "Timecode",
-            Declared::GPU.time(TimeReach::Clock),
+            Declared::Filter(Visual::GPU.time(TimeReach::Clock)),
             "Text",
             vec![
                 p("displayFormat", "Display Format", Value::Enum(0), popup(&["SMPTE HH:MM:SS:FF", "Frames", "Feet + Frames (35mm)", "Feet + Frames (16mm)"])),
@@ -996,7 +996,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.obsolete.basictext",
             "Basic Text",
-            Declared::GPU,
+            Declared::Filter(Visual::GPU),
             "Obsolete",
             vec![
                 p("text", "Text", Value::Str("Text".into()), ParamUi::Text),
@@ -1016,7 +1016,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.obsolete.pathtext",
             "Path Text",
-            Declared::GPU.time(TimeReach::Clock),
+            Declared::Filter(Visual::GPU.time(TimeReach::Clock)),
             "Obsolete",
             vec![
                 p("text", "Text", Value::Str("Text".into()), ParamUi::Text),
@@ -1058,7 +1058,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.obsolete.lightning",
             "Lightning",
-            Declared::GPU.time(TimeReach::Clock),
+            Declared::Filter(Visual::GPU.time(TimeReach::Clock)),
             "Obsolete",
             vec![
                 p("startPoint", "Start Point", pt(0.1, 0.5), ParamUi::Point),

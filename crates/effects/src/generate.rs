@@ -6,7 +6,7 @@ use effectcraft_project::ParamUi;
 use effectcraft_raster::Px;
 use rayon::prelude::*;
 
-use crate::{Buf, Declared, EffectCtx, EffectSpec, col, num, p, popup, slider};
+use crate::{Buf, Declared, EffectCtx, EffectSpec, Visual, col, num, p, popup, slider};
 
 /// Checkerboard / Grid "Size From" options.
 pub(crate) const SIZE_FROM: [&str; 3] = ["Corner Point", "Width Slider", "Width & Height Sliders"];
@@ -353,7 +353,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.generate.gradientramp",
             "Gradient Ramp",
-            Declared::GPU,
+            Declared::Filter(Visual::GPU),
             "Generate",
             vec![
                 p("start", "Start of Ramp", pt(0.5, 0.0), ParamUi::Point),
@@ -369,7 +369,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.generate.fourcolor",
             "4-Color Gradient",
-            Declared::GPU,
+            Declared::Filter(Visual::GPU),
             "Generate",
             vec![
                 p("positionsColors/point1", "Point 1", pt(0.1, 0.1), ParamUi::Point),
@@ -391,7 +391,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.generate.checkerboard",
             "Checkerboard",
-            Declared::GPU,
+            Declared::Filter(Visual::GPU),
             "Generate",
             vec![
                 p("anchor", "Anchor", pt(0.0, 0.0), ParamUi::Point),
@@ -410,7 +410,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.generate.grid",
             "Grid",
-            Declared::GPU,
+            Declared::Filter(Visual::GPU),
             "Generate",
             vec![
                 p("anchor", "Anchor", pt(0.0, 0.0), ParamUi::Point),
@@ -431,7 +431,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.generate.circle",
             "Circle",
-            Declared::GPU,
+            Declared::Filter(Visual::GPU),
             "Generate",
             vec![
                 p("center", "Center", pt(0.5, 0.5), ParamUi::Point),

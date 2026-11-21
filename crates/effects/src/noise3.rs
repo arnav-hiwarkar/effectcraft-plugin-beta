@@ -18,7 +18,7 @@ use effectcraft_project::ParamUi;
 use rayon::prelude::*;
 
 use crate::generate::lattice;
-use crate::{Buf, Declared, EffectCtx, EffectSpec, ParamSpec, num, p, popup, slider};
+use crate::{Buf, Declared, EffectCtx, EffectSpec, ParamSpec, Visual, num, p, popup, slider};
 
 /// Fractal Type options (shared by both effects).
 pub const FRACTAL_TYPES: [&str; 9] =
@@ -148,8 +148,8 @@ fn params(turbulent: bool) -> Vec<ParamSpec> {
 
 pub fn specs() -> Vec<EffectSpec> {
     vec![
-        spec("ec.noise.fractal", "Fractal Noise", Declared::GPU, params(false), fractal_noise),
-        spec("ec.noise.turbulent", "Turbulent Noise", Declared::GPU, params(true), turbulent_noise),
+        spec("ec.noise.fractal", "Fractal Noise", Declared::Filter(Visual::GPU), params(false), fractal_noise),
+        spec("ec.noise.turbulent", "Turbulent Noise", Declared::Filter(Visual::GPU), params(true), turbulent_noise),
     ]
 }
 

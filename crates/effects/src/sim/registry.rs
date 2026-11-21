@@ -4,7 +4,7 @@ use super::particle_fx::{PW_FOV, PW_TEXTURE_LAYER, mr_mercury, particle_systems2
 use super::sprites::SpritePlan;
 use super::weather::{bubbles, drizzle, rainfall, rainfall_plan, snowfall, snowfall_plan, star_burst, star_burst_plan};
 use super::{Buf, EffectCtx, EffectSpec, ParamUi, Value, col, num, p, popup, slider};
-use crate::{Declared, EffectInputs, TimeReach};
+use crate::{Declared, EffectInputs, TimeReach, Visual};
 
 /// The sprite plan of a sprite-drawing simulation effect for buffer geometry `b` (its pixels
 /// are not read), `None` for other effects or settings drawn otherwise (the GPU compositor's
@@ -34,7 +34,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.sim.ccrainfall",
             "Rainfall",
-            Declared::GPU.time(TimeReach::Neighbours),
+            Declared::Filter(Visual::GPU.time(TimeReach::ClockAndOtherFrames)),
             vec![
                 p("drops", "Drops", num(5000.0), slider(0.0, 100_000.0, 0.0, 20_000.0, 0)),
                 p("size", "Size", num(1.0), slider(0.0, 50.0, 0.0, 10.0, 2)),
@@ -56,7 +56,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.sim.ccsnowfall",
             "Snowfall",
-            Declared::GPU.time(TimeReach::Neighbours),
+            Declared::Filter(Visual::GPU.time(TimeReach::ClockAndOtherFrames)),
             vec![
                 p("flakes", "Flakes", num(10_000.0), slider(0.0, 200_000.0, 0.0, 50_000.0, 0)),
                 p("size", "Size", num(3.0), slider(0.0, 50.0, 0.0, 20.0, 2)),
@@ -83,7 +83,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.sim.ccbubbles",
             "Bubbles",
-            Declared::GPU.time(TimeReach::Neighbours),
+            Declared::Filter(Visual::GPU.time(TimeReach::ClockAndOtherFrames)),
             vec![
                 p("bubbleAmount", "Bubble Amount", num(100.0), slider(0.0, 10_000.0, 0.0, 1000.0, 0)),
                 p("bubbleSpeed", "Bubble Speed", num(0.5), slider(-10.0, 10.0, -2.0, 2.0, 2)),
@@ -98,7 +98,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.sim.ccdrizzle",
             "Water Ripples",
-            Declared::GPU.time(TimeReach::Neighbours),
+            Declared::Filter(Visual::GPU.time(TimeReach::ClockAndOtherFrames)),
             vec![
                 p("dripRate", "Drip Rate", num(10.0), slider(0.0, 200.0, 0.0, 50.0, 2)),
                 p("longevity", "Longevity (sec)", num(1.0), slider(0.0, 30.0, 0.0, 5.0, 2)),
@@ -120,7 +120,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.sim.ccstarburst",
             "Starfield",
-            Declared::GPU.time(TimeReach::Neighbours),
+            Declared::Filter(Visual::GPU.time(TimeReach::ClockAndOtherFrames)),
             vec![
                 p("scatter", "Scatter", num(100.0), slider(0.0, 1000.0, 0.0, 300.0, 1)),
                 p("speed", "Speed", num(1.0), slider(-10.0, 10.0, -4.0, 4.0, 2)),
@@ -134,7 +134,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.sim.ccparticleworld",
             "Particle Emitter 3D",
-            Declared::GPU.time(TimeReach::History).inputs(EffectInputs::CompScene),
+            Declared::Filter(Visual::GPU.time(TimeReach::OtherTimesUnkeyed).inputs(EffectInputs::CompScene)),
             vec![
                 p("birthRate", "Birth Rate", num(0.5), slider(0.0, 100.0, 0.0, 10.0, 2)),
                 p("longevity", "Longevity (sec)", num(1.0), slider(0.0, 100.0, 0.0, 10.0, 2)),
@@ -178,7 +178,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.sim.ccparticlesystems2",
             "Particle Emitter 2D",
-            Declared::GPU.time(TimeReach::History),
+            Declared::Filter(Visual::GPU.time(TimeReach::OtherTimesUnkeyed)),
             vec![
                 p("birthRate", "Birth Rate", num(2.0), slider(0.0, 100.0, 0.0, 20.0, 2)),
                 p("longevity", "Longevity (sec)", num(1.0), slider(0.0, 100.0, 0.0, 10.0, 2)),
@@ -207,7 +207,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.sim.ccmrmercury",
             "Liquid Particles",
-            Declared::GPU.time(TimeReach::History),
+            Declared::Filter(Visual::GPU.time(TimeReach::OtherTimesUnkeyed)),
             vec![
                 p("radiusX", "Radius X", num(50.0), slider(0.0, 2000.0, 0.0, 300.0, 1)),
                 p("radiusY", "Radius Y", num(50.0), slider(0.0, 2000.0, 0.0, 300.0, 1)),

@@ -821,12 +821,12 @@ impl<'a> Renderer<'a> {
         // get the cover: they move content past the painted bounds without growing the buffer.
         let video = || {
             fx.groups().filter(|g| g.enabled).filter_map(|g| match &g.kind {
-                GroupKind::Effect { effect } => effectcraft_effects::find(effect).filter(|s| s.declared.role != effectcraft_effects::EffectRole::Audio),
+                GroupKind::Effect { effect } => effectcraft_effects::find(effect).filter(|s| s.declared != effectcraft_effects::Declared::Audio),
                 _ => None,
             })
         };
         if !adjustment && video().next().is_some() {
-            if video().all(|s| s.declared.cover == effectcraft_effects::Cover::OwnMargins) {
+            if video().all(|s| s.declared.visual().is_some_and(|v| v.cover == effectcraft_effects::Cover::OwnMargins)) {
                 target.align(layer_size);
             } else {
                 target.cover(layer_size);
@@ -872,7 +872,7 @@ impl<'a> Renderer<'a> {
                 GroupKind::Effect { effect } => effectcraft_effects::find(effect).map(|s| (i, g, s)),
                 _ => None,
             })
-            .filter(|(_, _, s)| s.declared.role != effectcraft_effects::EffectRole::Audio)
+            .filter(|(_, _, s)| s.declared != effectcraft_effects::Declared::Audio)
             .collect();
         let accel = self.active_accel();
         let mut k = 0;

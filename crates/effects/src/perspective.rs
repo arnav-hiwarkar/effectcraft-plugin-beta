@@ -11,7 +11,7 @@ use effectcraft_raster::{Image, Px, gaussian_blur};
 use rayon::prelude::*;
 
 use crate::util::{Plane, gauss_plane, layer_rect, premul, smoothstep, unpremul};
-use crate::{Buf, Declared, EffectCtx, EffectSpec, ParamSpec, col, num, p, popup, slider};
+use crate::{Buf, Declared, EffectCtx, EffectSpec, ParamSpec, Visual, col, num, p, popup, slider};
 
 fn spec(id: &'static str, name: &'static str, declared: Declared, params: Vec<ParamSpec>, render: crate::RenderFn) -> EffectSpec {
     EffectSpec { id, name, category: "Perspective", params, render, declared, float: true }
@@ -416,7 +416,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.perspective.bevelalpha",
             "Bevel Alpha",
-            Declared::GPU,
+            Declared::Filter(Visual::GPU),
             vec![
                 p("edgeThickness", "Edge Thickness", num(2.0), slider(0.0, 200.0, 0.0, 10.0, 2)),
                 p("lightAngle", "Light Angle", num(-60.0), ParamUi::Angle),
@@ -428,7 +428,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.perspective.beveledges",
             "Bevel Edges",
-            Declared::GPU,
+            Declared::Filter(Visual::GPU),
             vec![
                 p("edgeThickness", "Edge Thickness", num(0.1), slider(0.0, 0.5, 0.0, 0.5, 2)),
                 p("lightAngle", "Light Angle", num(-60.0), ParamUi::Angle),
@@ -440,7 +440,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.perspective.radialshadow",
             "Radial Shadow",
-            Declared::GPU,
+            Declared::Filter(Visual::GPU),
             vec![
                 p("color", "Shadow Color", col(0.0, 0.0, 0.0), ParamUi::Color),
                 p("opacity", "Opacity", num(50.0), slider(0.0, 100.0, 0.0, 100.0, 0)),
@@ -454,12 +454,12 @@ pub fn specs() -> Vec<EffectSpec> {
             ],
             radial_shadow,
         ),
-        spec("ec.perspective.cccylinder", "Cylinder Wrap", Declared::GPU, cyl, cylinder),
-        spec("ec.perspective.ccsphere", "Sphere Wrap", Declared::GPU, sph, sphere),
+        spec("ec.perspective.cccylinder", "Cylinder Wrap", Declared::Filter(Visual::GPU), cyl, cylinder),
+        spec("ec.perspective.ccsphere", "Sphere Wrap", Declared::Filter(Visual::GPU), sph, sphere),
         spec(
             "ec.perspective.ccspotlight",
             "Surface Spotlight",
-            Declared::GPU,
+            Declared::Filter(Visual::GPU),
             vec![
                 p("from", "From", pt(0.3, 0.2), ParamUi::Point),
                 p("to", "To", pt(0.5, 0.5), ParamUi::Point),

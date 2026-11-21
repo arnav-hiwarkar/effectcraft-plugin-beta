@@ -13,7 +13,7 @@ use effectcraft_raster::{Image, Px};
 use rayon::prelude::*;
 
 use crate::util::{Plane, fit_layer, gauss_plane, layer_or_self, lerp4, smoothstep, unpremul};
-use crate::{Buf, Declared, EffectCtx, EffectSpec, num, p, popup, slider};
+use crate::{Buf, Declared, EffectCtx, EffectSpec, Visual, num, p, popup, slider};
 
 fn spec(id: &'static str, name: &'static str, declared: Declared, params: Vec<crate::ParamSpec>, render: crate::RenderFn) -> EffectSpec {
     EffectSpec { id, name, category: "Transition", params, render, declared, float: true }
@@ -351,7 +351,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.transition.ccglasswipe",
             "Glass Wipe",
-            Declared::GPU,
+            Declared::Filter(Visual::GPU),
             vec![
                 done(),
                 p("layerToReveal", "Layer to Reveal", Value::Layer(None), ParamUi::Layer),
@@ -364,7 +364,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.transition.ccimagewipe",
             "Luminance Image Wipe",
-            Declared::GPU,
+            Declared::Filter(Visual::GPU),
             vec![
                 done(),
                 p("borderSoftness", "Border Softness", num(0.0), pct()),
@@ -379,7 +379,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.transition.ccjaws",
             "Serrated Wipe",
-            Declared::GPU,
+            Declared::Filter(Visual::GPU),
             vec![
                 done(),
                 p("center", "Center", pt(0.5, 0.5), ParamUi::Point),
@@ -393,7 +393,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.transition.cclinesweep",
             "Line Sweep",
-            Declared::GPU,
+            Declared::Filter(Visual::GPU),
             vec![
                 done(),
                 p("direction", "Direction", num(0.0), ParamUi::Angle),
@@ -406,7 +406,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.transition.cctwister",
             "Twist Wipe",
-            Declared::GPU,
+            Declared::Filter(Visual::GPU),
             vec![
                 done(),
                 p("backside", "Backside", Value::Layer(None), ParamUi::Layer),
@@ -419,7 +419,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.transition.ccwarpomatic",
             "Warp Dissolve",
-            Declared::GPU,
+            Declared::Filter(Visual::GPU),
             vec![
                 done(),
                 p("layerToReveal", "Layer to Reveal", Value::Layer(None), ParamUi::Layer),

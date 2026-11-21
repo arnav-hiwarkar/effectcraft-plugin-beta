@@ -31,13 +31,14 @@
 //! The WebAssembly ABI is versioned separately ([`WASM_API_VERSION`]): ABI 1 is `ec_render`;
 //! ABI 2 adds `ec_render2`, which receives the layer's previous and next frames.
 
+use std::collections::HashMap;
 use std::sync::{Arc, OnceLock, RwLock};
 
 use effectcraft_keyframe::Value;
 use effectcraft_project::ParamUi;
 use serde::{Deserialize, Serialize};
 
-use crate::{Buf, Declared, EffectCtx, EffectSpec, ParamSpec, Params, RenderFn, TimeReach};
+use crate::{Buf, Declared, EffectCtx, EffectSpec, ParamSpec, Params, RenderFn, TimeReach, Visual};
 
 /// The plug-in API version this build implements (manifests with API 1 or 2 are accepted).
 pub const PLUGIN_API_VERSION: u32 = 2;
@@ -425,6 +426,15 @@ fn plugin_specs() -> &'static RwLock<Vec<&'static EffectSpec>> {
     P.get_or_init(|| RwLock::new(vec![]))
 }
 
+fn plugin_declared() -> &'static RwLock<HashMap<&'static str, Declared>> {
+    static D: OnceLock<RwLock<HashMap<&'static str, Declared>>> = OnceLock::new();
+    D.get_or_init(Default::default)
+}
+
+pub fn declared(id: &str) -> Option<Declared> {
+    plugin_declared().read().ok()?.get(id).copied()
+}
+
 /// The registered plug-in effects.
 pub fn plugins() -> Vec<&'static EffectSpec> {
     plugin_specs().read().map(|v| v.clone()).unwrap_or_default()
@@ -495,10 +505,11 @@ pub fn register_plugin(plugin: Arc<dyn EffectPlugin>) -> Result<&'static EffectS
     let m = plugin.manifest().clone();
     m.validate()?;
     let mut specs = plugin_specs().write().map_err(|_| "plug-in registry poisoned".to_string())?;
+    let mut declared = plugin_declared().write().map_err(|_| "plug-in registry poisoned".to_string())?;
     if crate::registry().iter().any(|s| s.id == m.id) || specs.iter().any(|s| s.id == m.id) {
         return Err(format!("an effect with id `{}` is already registered", m.id));
     }
-    let time = if plugin.reads_other_times() { TimeReach::History } else { TimeReach::OtherFrames };
+    let time = if plugin.reads_other_times() { TimeReach::OtherTimesUnkeyed } else { TimeReach::OtherFrames };
     let slot = SLOTS
         .iter()
         .position(|s| s.get().is_none())
@@ -510,9 +521,10 @@ pub fn register_plugin(plugin: Arc<dyn EffectPlugin>) -> Result<&'static EffectS
         category: leak(&m.category),
         params: m.params.iter().map(param_spec).collect(),
         render: TRAMPOLINES[slot],
-        declared: Declared::CPU.time(time),
+        declared: Declared::Filter(Visual::CPU.time(time)),
         float: true,
     }));
+    declared.insert(spec.id, spec.declared);
     specs.push(spec);
     Ok(spec)
 }

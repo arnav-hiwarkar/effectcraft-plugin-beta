@@ -91,7 +91,7 @@ pub use distort3::{RESHAPE_POINTS, ReshapeSetup, SmearSetup, cc_smear_pad, resha
 pub use distort4::liquify_mesh;
 use effectcraft_keyframe::Value;
 use effectcraft_project::build::Ids;
-pub use effectcraft_project::{Cover, Declared, EffectInputs, EffectRole, Routes, TimeReach};
+pub use effectcraft_project::{Cover, Declared, EffectInputs, Routes, TimeReach, Visual};
 use effectcraft_project::{GroupKind, ParamUi, PropGroup, Property};
 pub use effectcraft_raster::{AuxChannels, Image};
 pub use misc::{
@@ -743,7 +743,8 @@ pub fn find(id: &str) -> Option<&'static EffectSpec> {
 }
 
 pub fn declared(id: &str) -> Option<Declared> {
-    find(id).map(|s| s.declared)
+    static BUILT_IN: OnceLock<HashMap<&'static str, Declared>> = OnceLock::new();
+    BUILT_IN.get_or_init(|| registry().iter().map(|s| (s.id, s.declared)).collect()).get(id).copied().or_else(|| plugin::declared(id))
 }
 
 /// Every effect: the built-ins ([`registry`]) and the registered plug-ins
@@ -1363,7 +1364,7 @@ mod tests {
                 apply(s, &ctx, Buf { img: img.clone(), offset: [0.0, 0.0], scale: 1.0 }).img
             };
             let (a, b) = (run(0.0), run(1.37));
-            if a != b && !s.declared.time.reads_clock() {
+            if a != b && !s.declared.time().keys_on_time() {
                 missing.push(s.id);
             }
         }

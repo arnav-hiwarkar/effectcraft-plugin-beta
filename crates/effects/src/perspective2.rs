@@ -11,7 +11,7 @@ use effectcraft_raster::{Image, Px};
 use rayon::prelude::*;
 
 use crate::util::{Plane, fit_layer, gauss_plane, premul, unpremul};
-use crate::{Buf, Declared, EffectCtx, EffectSpec, LayerPixels, num, p, popup, slider};
+use crate::{Buf, Declared, EffectCtx, EffectSpec, LayerPixels, Visual, num, p, popup, slider};
 
 fn spec(id: &'static str, name: &'static str, declared: Declared, params: Vec<crate::ParamSpec>, render: crate::RenderFn) -> EffectSpec {
     EffectSpec { id, name, category: "Perspective", params, render, declared, float: true }
@@ -195,7 +195,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.perspective.ccenvironment",
             "Environment Map",
-            Declared::GPU,
+            Declared::Filter(Visual::GPU),
             vec![
                 p("environment", "Environment", Value::Layer(None), ParamUi::Layer),
                 p("mapping", "Mapping", Value::Enum(0), popup(&["Spherical", "Probe", "Vertical Cross"])),
@@ -207,7 +207,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.perspective.3dglasses",
             "3D Glasses",
-            Declared::GPU,
+            Declared::Filter(Visual::GPU),
             vec![
                 p("leftView", "Left View", Value::Layer(None), ParamUi::Layer),
                 p("rightView", "Right View", Value::Layer(None), ParamUi::Layer),

@@ -674,7 +674,7 @@ fn time_dependent(layer: &Layer, effects: bool) -> bool {
         for g in fx.groups() {
             if let effectcraft_project::GroupKind::Effect { effect } = &g.kind
                 && g.enabled
-                && effectcraft_effects::declared(effect).is_some_and(|d| d.time.reads_clock())
+                && effectcraft_effects::declared(effect).is_some_and(|d| d.time().keys_on_time())
             {
                 return true;
             }
@@ -786,7 +786,7 @@ fn reads_other_times(layer: &Layer, effects: Option<usize>) -> bool {
             fx.groups().take(effects.unwrap_or(usize::MAX)).any(|g| {
                 g.enabled
                     && matches!(&g.kind, effectcraft_project::GroupKind::Effect { effect }
-                        if effectcraft_effects::declared(effect).is_some_and(|d| d.time == effectcraft_effects::TimeReach::History))
+                        if effectcraft_effects::declared(effect).is_some_and(|d| d.time() == effectcraft_effects::TimeReach::OtherTimesUnkeyed))
             })
         })
 }
@@ -1031,7 +1031,7 @@ fn reads_comp_scene(layer: &Layer) -> bool {
         && layer.effects().is_some_and(|fx| {
             fx.groups().any(|g| {
                 g.enabled
-                    && matches!(&g.kind, effectcraft_project::GroupKind::Effect { effect } if effectcraft_effects::declared(effect).is_some_and(|d| d.inputs == effectcraft_effects::EffectInputs::CompScene))
+                    && matches!(&g.kind, effectcraft_project::GroupKind::Effect { effect } if effectcraft_effects::declared(effect).and_then(|d| d.visual()).is_some_and(|v| v.inputs == effectcraft_effects::EffectInputs::CompScene))
             })
         })
 }

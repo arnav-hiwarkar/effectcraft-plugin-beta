@@ -36,7 +36,7 @@ use effectcraft_track::Homography;
 use effectcraft_track::stabilize::{Framing, Method, Plan, Ripple, StabResult, StabSettings, WarpAnalysis, plan};
 use rayon::prelude::*;
 
-use crate::{Buf, Declared, EffectCtx, EffectSpec, Params, TimeReach, num, p, popup, slider};
+use crate::{Buf, Declared, EffectCtx, EffectSpec, Params, TimeReach, Visual, num, p, popup, slider};
 
 /// The effect's id.
 pub const ID: &str = "ec.distort.warpstabilizer";
@@ -88,7 +88,7 @@ pub fn specs() -> Vec<EffectSpec> {
             p(ANALYSIS_KEY, "Analysis Key", Value::Str(String::new()), ParamUi::Hidden),
         ],
         render,
-        declared: Declared::CPU.time(TimeReach::Neighbours),
+        declared: Declared::Filter(Visual::CPU.time(TimeReach::ClockAndOtherFrames)),
         float: true,
     }]
 }

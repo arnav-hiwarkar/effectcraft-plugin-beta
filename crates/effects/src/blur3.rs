@@ -16,7 +16,7 @@ use effectcraft_raster::{Image, Px};
 use rayon::prelude::*;
 
 use crate::util::Plane;
-use crate::{Buf, Declared, EffectCtx, EffectSpec, TimeReach, num, p, popup, slider};
+use crate::{Buf, Declared, EffectCtx, EffectSpec, TimeReach, Visual, num, p, popup, slider};
 
 fn spec(id: &'static str, name: &'static str, declared: Declared, params: Vec<crate::ParamSpec>, render: crate::RenderFn) -> EffectSpec {
     EffectSpec { id, name, category: "Blur & Sharpen", params, render, declared, float: true }
@@ -247,7 +247,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.blur.ccradial",
             "Variable Radial Blur",
-            Declared::GPU,
+            Declared::Filter(Visual::GPU),
             vec![
                 p("type", "Type", Value::Enum(1), popup(&RADIAL_TYPES)),
                 p("amount", "Amount", num(10.0), slider(-100.0, 100.0, -100.0, 100.0, 1)),
@@ -259,7 +259,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.blur.camerashakedeblur",
             "Camera-Shake Deblur",
-            Declared::CPU.time(TimeReach::Neighbours),
+            Declared::Filter(Visual::CPU.time(TimeReach::ClockAndOtherFrames)),
             vec![
                 p("blurDuration", "Blur Duration", num(2.0), slider(1.0, 10.0, 1.0, 10.0, 0)),
                 p("deblurMethod", "Deblur Method", Value::Enum(0), popup(&["High Quality (slower)", "Standard"])),
