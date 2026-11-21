@@ -624,11 +624,18 @@ fn main() -> ExitCode {
             let rest: Vec<String> = std::env::args().skip(2).collect();
             ico::run(&rest.iter().map(String::as_str).collect::<Vec<_>>())
         }
+        "engine-lock" => {
+            let rest: Vec<String> = std::env::args().skip(2).collect();
+            run(Command::new(env!("CARGO"))
+                .current_dir(root())
+                .args(["test", "-p", "effectcraft-engine", "--test", "it", "engine_lock::engine_lock_lists_every_shipped_id", "--", "--exact"])
+                .env("CRAFT_ENGINE_LOCK_ARGS", rest.join("\n")))
+        }
         "version" => {
             let rest: Vec<String> = std::env::args().skip(2).collect();
             version::run(&root(), &rest.iter().map(String::as_str).collect::<Vec<_>>())
         }
-        _ => Err("usage: cargo xtask <layers|assets|pdf-deps|lock-patches|aep-corpus [--dir DIR]|wasm|web [--dev] [--serve PORT]|ico OUT.ico IN.png…|version [set X.Y.Z]|ci [--affected [--base REV] [--dry-run]]|audio-backend|legacy-corpus [--check]|bench [--pair] [--bin CLI] [--quick] [--project F --comp C] [--compare OLD.jsonl] (--help)>".into()),
+        _ => Err("usage: cargo xtask <layers|assets|pdf-deps|lock-patches|aep-corpus [--dir DIR]|wasm|web [--dev] [--serve PORT]|ico OUT.ico IN.png…|version [set X.Y.Z]|ci [--affected [--base REV] [--dry-run]]|audio-backend|legacy-corpus [--check]|engine-lock [--check | --update [--rename OLD=NEW]... [--retire ID]... [--migrate ID=NAME]...]|bench [--pair] [--bin CLI] [--quick] [--project F --comp C] [--compare OLD.jsonl] (--help)>".into()),
     };
     match r {
         Ok(()) => ExitCode::SUCCESS,

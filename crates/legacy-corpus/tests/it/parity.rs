@@ -130,8 +130,12 @@ fn the_abi2_effect_gets_zeroed_neighbours_without_a_host() {
     assert_eq!(manifest["id"], json!(NEIGHBOURS_ID));
     assert_eq!(frames, vec![vec![[0.0, 0.0, 0.0, 1.0]; 2]]);
     loaded();
-    assert!(effectcraft_effects::plugin::reads_other_times(NEIGHBOURS_ID));
-    assert!(!effectcraft_effects::plugin::reads_other_times(GAIN_ID));
+    let time = |id: &str| match effectcraft_effects::plugin::declared(id) {
+        Some(effectcraft_effects::Declared::Filter(visual)) => Some(visual.time),
+        _ => None,
+    };
+    assert_eq!(time(NEIGHBOURS_ID), Some(effectcraft_effects::TimeReach::OtherTimesUnkeyed));
+    assert_eq!(time(GAIN_ID), Some(effectcraft_effects::TimeReach::OtherFrames));
 }
 
 fn the_project_renders_its_plugin_effects() {

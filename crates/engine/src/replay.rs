@@ -363,6 +363,10 @@ fn cut(s: &str) -> String {
 
 /// Run one command the way the app does, noting whether it panicked.
 fn exec(s: &mut Session, id: &str, params: Value) -> (Result<Value>, bool) {
+    let (id, params) = match crate::engine_ids::resolve_persisted(crate::engine_ids::Site::Journal, id, params) {
+        Ok(call) => call,
+        Err(why) => return (Err(why.into()), false),
+    };
     let before = guard::caught();
     let r = guard::guarded(&format!("replay of `{id}`"), || s.execute(id, params));
     s.events.clear();

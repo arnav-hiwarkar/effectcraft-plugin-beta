@@ -14,6 +14,8 @@ pub enum EngineError {
     #[error("{0}")]
     Project(#[from] effectcraft_project::ProjectError),
     #[error("{0}")]
+    Unresolved(#[from] crate::engine_ids::Unresolved),
+    #[error("{0}")]
     Other(String),
     /// Refused because parts would be lost in a conversion; nothing changed. `losses` names them,
     /// `advice` how to go on (`file.importAep` / `file.exportAep` without `allowLosses`).

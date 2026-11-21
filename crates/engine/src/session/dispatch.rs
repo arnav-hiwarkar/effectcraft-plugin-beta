@@ -56,6 +56,7 @@ impl Session {
     /// it may not change the settings that limit scripts (Settings ▸ Scripting & Expressions ▸
     /// Application Scripting), which only the user can, from the UI, CLI or control channel.
     pub fn execute_for_script(&mut self, id: &str, params: Value) -> Result<Value> {
+        let (id, params) = crate::engine_ids::resolve_persisted(crate::engine_ids::Site::Script, id, params)?;
         self.script_calls.0 = self.script_calls.0.saturating_add(1);
         let r = self.execute(id, params);
         self.script_calls.0 = self.script_calls.0.saturating_sub(1);

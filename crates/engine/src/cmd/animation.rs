@@ -140,6 +140,9 @@ fn save_preset(s: &mut Session, p: &Value) -> Result<Value> {
             v
         })
         .collect();
+    for (_, g) in &mut effects {
+        crate::engine_ids::persist_effect(g);
+    }
     let fx_json: Vec<Value> = effects.iter().map(|(_, g)| serde_json::to_value(g).unwrap_or_default()).collect();
     let name = str_p(p, "name")
         .map(str::to_string)
@@ -200,6 +203,11 @@ fn apply_preset(s: &mut Session, p: &Value) -> Result<Value> {
     }
     let mut effects: Vec<PropGroup> =
         doc["effects"].as_array().map(|a| a.iter().filter_map(|v| serde_json::from_value(v.clone()).ok()).collect()).unwrap_or_default();
+    let unresolved: Vec<String> = effects
+        .iter_mut()
+        .filter_map(|g| crate::engine_ids::resolve_effect(crate::engine_ids::Site::PresetEffect, g).err())
+        .map(|why| why.to_string())
+        .collect();
     // Older presets stored effect keys at the source layer's times.
     if doc[PRESET_TAG].as_u64().unwrap_or(1) < RELATIVE_EFFECT_KEYS
         && let Some(first) = earliest_key(&effects)
@@ -419,7 +427,7 @@ fn apply_preset(s: &mut Session, p: &Value) -> Result<Value> {
         s.save_prefs();
         s.prefs_revision += 1;
     }
-    Ok(json!({"applied": applied, "skipped": skipped, "staticKept": static_kept}))
+    Ok(json!({"applied": applied, "skipped": skipped, "staticKept": static_kept, "unresolved": unresolved}))
 }
 
 /// The preset path of the Version of the Cineon Converter whose Gamma is at preset path `path`
