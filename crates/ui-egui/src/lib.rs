@@ -28,6 +28,7 @@ pub mod display_gpu;
 pub mod dock;
 pub mod dock_ui;
 mod expression_diagnostics;
+pub mod frame_probe;
 pub mod frames;
 pub mod gpu_failure;
 pub mod header;
@@ -232,9 +233,16 @@ pub struct Playback {
     pub pace_acc: Option<f64>,
     /// When the silent clock last ran (seconds), for the pace.
     pub paced_at: Option<f64>,
+    pub generation: u64,
+    pub held_from: Option<(f64, i64)>,
 }
 
 impl Playback {
+    pub fn anchor(&mut self, now: f64, frame: i64) {
+        self.start_wall = now;
+        self.start_frame = frame;
+    }
+
     /// A new frame went on screen at `now`.
     pub fn frame_shown(&mut self, now: f64) {
         self.shown += 1;
@@ -349,11 +357,10 @@ pub struct EffectcraftApp {
     pub playback: Playback,
     pub dialog: Option<Dialog>,
     pub hooks: Hooks,
-    pub fps: f32,
+    pub frame_probe: frame_probe::FrameProbe,
     /// The app clock and the value it had at the last [`EffectcraftApp::tick`].
     clock: AppClock,
     now: f64,
-    last_time: f64,
     styled: bool,
     fonts_ready: bool,
     /// The interface language the fonts were installed for; `""` until the first frame.

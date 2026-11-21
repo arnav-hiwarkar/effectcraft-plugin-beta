@@ -74,6 +74,13 @@ fn lead_of(after: impl Fn(i64) -> Option<i64>, cached: &[i64], max: i64) -> (i64
     (ahead.iter().filter(|f| cached.binary_search(f).is_ok()).count() as i64, ahead.len() as i64)
 }
 
+/// The frame under the audible sample while the sound drives the preview, kept in the
+/// preview's range (`wa..=wb`) and on its frame step.
+pub(super) fn sound_frame(a: &crate::audio::AudioPlayback, fr: effectcraft_engine::time::FrameRate, wa: i64, wb: i64, step: i64) -> i64 {
+    let step = step.max(1);
+    wa + (fr.frame_at(a.clock_time()).clamp(wa, wb) - wa).div_euclid(step) * step
+}
+
 impl PlaybackPass<'_> {
     /// The frame `k` played frames after `from` (wrapping as the preview loops), `None` once a
     /// preview that doesn't loop has reached its end.
@@ -113,7 +120,7 @@ impl EffectcraftApp {
         // While the sound drives a video preview, frames are rendered and kept ahead of what it
         // plays rather than of the picture, which drops frames behind it when rendering can't
         // keep up (#2473).
-        let lead = if video { self.sound_frame(fr, wa, wb, plan.map_or(1, |p| p.step)).unwrap_or(cur) } else { cur };
+        let lead = if video { self.audio.as_ref().map_or(cur, |a| sound_frame(a, fr, wa, wb, plan.map_or(1, |p| p.step))) } else { cur };
         let ahead = self.prefetch_ahead(ctx, now);
         let queued = self.frames.inflight();
         let series = self.frame_series(cid, scale);
@@ -212,8 +219,7 @@ impl EffectcraftApp {
         self.playback.waiting = !all;
         if all {
             self.playback.caching = false;
-            self.playback.start_wall = now;
-            self.playback.start_frame = p.first;
+            self.playback.anchor(now, p.first);
             self.session.set_time(fr.tick_of(p.first));
             self.start_audio(fr.tick_of(p.first));
         }
@@ -294,8 +300,7 @@ impl EffectcraftApp {
             return false;
         }
         let Some(p) = plan else { return false };
-        self.playback.start_wall = now;
-        self.playback.start_frame = cur;
+        self.playback.anchor(now, cur);
         // `prefetch_playback` requests every uncached frame of offsets 0..window from here.
         let window = (ahead * 3).min(fit - 1);
         let need = self.frames.get(&FrameKey { frame: cur, ..series }).map(|img| startup_frames(ahead, window, self.frames.budget(), img.bytes()));
@@ -359,8 +364,7 @@ impl EffectcraftApp {
         let need = ahead.min(fit - 1).max(1);
         if (self.playback.keeps_up(now) && self.cached_ahead(&p, &series, cur, need)) || self.cached_ahead(&p, &series, cur, fit) {
             self.playback.audio_held = false;
-            self.playback.start_wall = now;
-            self.playback.start_frame = cur;
+            self.playback.anchor(now, cur);
             self.start_audio(fr.tick_of(cur));
         }
     }
@@ -405,14 +409,6 @@ impl EffectcraftApp {
         }
         ctx.request_repaint();
         true
-    }
-
-    /// The frame under the audible sample while the sound drives the preview, kept in the
-    /// preview's range and on its frame step; `None` without sound.
-    fn sound_frame(&self, fr: effectcraft_engine::time::FrameRate, wa: i64, wb: i64, step: i64) -> Option<i64> {
-        let a = self.audio.as_ref()?;
-        let step = step.max(1);
-        Some(wa + (fr.frame_at(a.clock_time()).clamp(wa, wb) - wa).div_euclid(step) * step)
     }
 
     /// The last cached frame after the current one and before `target`, in play order: what a
@@ -470,8 +466,7 @@ impl EffectcraftApp {
             }
             if self.playback.pace_acc.take().is_some() {
                 // Back to real time from here.
-                self.playback.start_wall = now;
-                self.playback.start_frame = cur;
+                self.playback.anchor(now, cur);
             }
         }
         let elapsed = now - self.playback.start_wall;
@@ -494,6 +489,7 @@ impl EffectcraftApp {
         }
         if self.frames.is_cached(&FrameKey { frame: target, ..series }) {
             self.playback.waiting = false;
+            self.playback.held_from = None;
             if target != cur {
                 self.session.set_time(fr.tick_of(target));
                 self.playback.frame_shown(now);
@@ -501,13 +497,13 @@ impl EffectcraftApp {
         } else {
             // Not cached yet: hold the clock at the current frame (cache first, then play).
             self.playback.waiting = true;
+            self.playback.held_from.get_or_insert((self.playback.start_wall, self.playback.start_frame));
             self.step_down(now, pass.scale);
             let next = pass.frame_after(cur, 1).unwrap_or(cur);
             if self.frames.is_cached(&FrameKey { frame: next, ..series }) {
                 self.session.set_time(fr.tick_of(next));
             }
-            self.playback.start_wall = now;
-            self.playback.start_frame = fr.frame_at(self.session.time());
+            self.playback.anchor(now, fr.frame_at(self.session.time()));
         }
         ctx.request_repaint();
     }

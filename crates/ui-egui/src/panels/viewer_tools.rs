@@ -404,8 +404,11 @@ fn draw_through_pass(
     if let Some(gpu) = app.display_gpu()
         && let Some(rs) = &app.window_wgpu
     {
+        let since = app.frame_probe.stamp(|| app.clock.now());
         let bake = if snapshot { &mut app.snapshot_bake } else { &mut app.viewer_bake };
-        if let Some(id) = bake.show(rs, &gpu, &src, pass, smooth) {
+        let shown = bake.show(rs, &gpu, &src, pass, smooth);
+        app.frame_probe.add(crate::frame_probe::Stage::Upload, since, || app.clock.now());
+        if let Some(id) = shown {
             painter.image(id, rect, bake.uv(), Color32::WHITE);
             return;
         }

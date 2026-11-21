@@ -236,6 +236,10 @@ pub fn handle(app: &mut EffectcraftApp, ctx: &egui::Context, req: &ControlReques
         "engine.commands" => engine_commands(app, p),
         "ui.menu.list" => ok(serde_json::to_value(crate::menus::menu_items(app)).unwrap_or_default()),
         "ui.inspect" => ok(inspect(app, ctx)),
+        "ui.perf.takeFrames" => match app.frame_probe.take() {
+            Some(recorded) => ok(json!(recorded)),
+            None => err("the frame probe is off: turn it on with ui.set {\"frameProbe\": true}"),
+        },
         "ui.elements" => elements(app, p),
         "ui.set" => set_ui(app, ctx, p),
         "ui.panel.show" | "ui.panel.close" => panel(app, &req.method, p),
@@ -369,6 +373,11 @@ fn set_ui_layout(app: &mut EffectcraftApp, p: &Value) -> Outcome {
     }
     if let Some(b) = p.get("menuBar").and_then(Value::as_bool) {
         app.ui.show_menu_bar = b;
+    }
+    match p.get("frameProbe").map(Value::as_bool) {
+        Some(Some(on)) => app.frame_probe.set_recording(on),
+        Some(None) => return err("frameProbe must be a boolean"),
+        None => {}
     }
     // Project panel optional columns, e.g. ["type", "duration", "path", "comment"].
     if let Some(Value::Array(a)) = p.get("projectColumns") {
@@ -836,7 +845,8 @@ pub fn inspect(app: &EffectcraftApp, ctx: &egui::Context) -> Value {
     json!({
         "window": [size.x, size.y],
         "pixelsPerPoint": ctx.pixels_per_point(),
-        "fps": app.fps,
+        "fps": app.frame_probe.fps(),
+        "perf": {"frames": app.frame_probe},
         "ui": ui,
         "playing": app.playback.playing,
         "time": app.session.time().seconds(),

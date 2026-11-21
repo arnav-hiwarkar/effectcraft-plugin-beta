@@ -1,6 +1,8 @@
 use super::clipboard::copy_image;
+use super::prefetch::sound_frame;
 use super::window::fit_window;
 use super::*;
+use crate::frame_probe::{Clock, Playhead, Stage};
 
 impl EffectcraftApp {
     /// Completed, non-discarded UI passes since launch.
@@ -39,6 +41,7 @@ impl EffectcraftApp {
                     }
                 }
                 control::Outcome::AfterInput => {
+                    self.frame_probe.input_queued(|| self.clock.now());
                     self.input_waiters.push(reply);
                     // The reply waits for a real UI pass: a hidden window must run one.
                     self.want_paint = true;
@@ -312,12 +315,6 @@ impl EffectcraftApp {
         // Screenshot completion, deadlines and issuance are app-side work: the callback only
         // stores pixels and wakes this viewport.
         self.tick_screenshots(ctx);
-        // Time-based FPS readout over UI passes (a hidden logic-only tick is not a frame).
-        let dt = (now - self.last_time) as f32;
-        if dt > 0.0 && dt < 2.0 {
-            self.fps = self.fps * 0.9 + (1.0 / dt).min(480.0) * 0.1;
-        }
-        self.last_time = now;
         // A hidden window paints when work needs a UI pass: queued input and waits, a settled
         // screenshot, or playback into a child viewport.
         let focused = self.focused;
@@ -377,10 +374,17 @@ impl EffectcraftApp {
     /// One UI pass: setup, input-driven shortcuts, layout and painting. Called from
     /// `eframe::App::ui` and by tests with the root `Ui`.
     pub fn draw(&mut self, ui: &mut egui::Ui, frame: &eframe::Frame) {
+        let since = self.frame_probe.stamp(|| self.clock.now());
         panels::viewer_text::begin_ui(ui.ctx());
         self.draw_inner(ui, frame);
         // All exits, including fonts/device loss, observe this pass's real custom availability.
         panels::viewer_text::finish_ime(self, ui);
+        self.frame_probe.add(Stage::Build, since, || self.clock.now());
+        if !ui.ctx().will_discard() {
+            let shown = self.viewer_shown.map(|(_, key)| key);
+            let (tick, clock) = (self.now, &self.clock);
+            self.frame_probe.finish(tick, || clock.now(), || playhead(&self.session, &self.playback, self.audio.as_ref(), shown, clock.now()));
+        }
     }
 
     /// Context creators install these hooks before the first full pass.
@@ -442,6 +446,9 @@ impl EffectcraftApp {
         // synthetic event: a hidden request is answered only after its forced pass, and a pass
         // egui throws away cannot produce an early success reply.
         if !ctx.will_discard() && self.synthetic.is_empty() {
+            if !self.input_waiters.is_empty() {
+                self.frame_probe.input_consumed();
+            }
             for w in self.input_waiters.drain(..) {
                 let _ = w.send(json!({"ok": true, "result": null}));
             }
@@ -739,6 +746,25 @@ impl EffectcraftApp {
             self.footage_watch_key = Some((self.session.revision, self.session.prefs.import.auto_reload_footage.clone(), self.session.disk_cache.is_some()));
             watcher.update(&self.session);
         }
+    }
+}
+
+pub(crate) fn playhead(session: &Session, playback: &Playback, audio: Option<&crate::audio::AudioPlayback>, shown: Option<FrameKey>, now: f64) -> Playhead {
+    let comp = session.active_comp_id().and_then(|cid| session.project.comp(cid).map(|c| (cid.0, c.frame_rate)));
+    let plan = playback.plan.filter(|p| p.video && playback.playing && !playback.caching && !playback.starting);
+    let clock = comp.zip(plan).and_then(|((_, fr), p)| {
+        let (wall, from) = playback.held_from.unwrap_or((playback.start_wall, playback.start_frame));
+        let frame = match audio {
+            Some(a) => Some(sound_frame(a, fr, p.start, p.end, p.step)),
+            None => p.frame_after(from, ((now - wall) * p.fps / p.step.max(1) as f64).floor() as i64),
+        }?;
+        Some(Clock { frame, step: p.step, first: p.start, last: p.end, generation: playback.generation })
+    });
+    Playhead {
+        playing: playback.playing,
+        current: comp.map(|(cid, fr)| (cid, fr.frame_at(session.time()))),
+        shown: shown.map(|key| (key.comp, key.frame)),
+        clock,
     }
 }
 

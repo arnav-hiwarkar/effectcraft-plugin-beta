@@ -138,7 +138,10 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
         if app.session.prefs.composition.show_rendering_progress {
             let ms = app.frames.last_ms.lock().map(|v| *v).unwrap_or(0.0);
             let rq = app.session.render_job.as_ref().map(|_| "  •  Rendering queue…").unwrap_or("");
-            let render_line = tr_args("Render: {} ms  •  UI {} fps{}", &[&format!("{ms:.0}"), &format!("{:.0}", app.fps), &rq]);
+            let render_line = tr_args(
+                "Render: {} ms  •  UI {} fps{}",
+                &[&format!("{ms:.0}"), &app.frame_probe.fps().map_or_else(|| "–".to_owned(), |fps| format!("{fps:.0}")), &rq],
+            );
             p.text(pos2(x0, ly), Align2::LEFT_CENTER, &render_line, Tokens::ui(11.5), t.text_faint);
             say("render", x0, ly, full, &render_line);
         }
