@@ -44,7 +44,7 @@ impl DragWatch {
         let edited = || {
             let current = &app.session.project;
             let heard = current.heard_layers().union(&project.heard_layers());
-            !now.same_pixels_with(&was, current.reads_markers(), &|l| heard.contains(id, l))
+            !now.same_pixels_with(&was, current.reads_markers(), &|l| heard.contains(id, l), effectcraft_engine::effects::declared)
         };
         if moved || (!Arc::ptr_eq(&was, &now) && edited()) {
             app.ui.viewer.property_interacting = true;

@@ -718,6 +718,77 @@ fn stepped_particle_layers_with_a_birth_rate_expression_are_not_layer_cached() {
     }
 }
 
+fn blur_with_an_expression(p: &mut Project, l: &mut effectcraft_project::Layer) {
+    add_effect_200(p, l, "ec.blur.gaussian", &[]);
+    let blur = l.props.sub_mut("effects").unwrap().children.iter_mut().find_map(|c| match c {
+        effectcraft_project::Node::Group(g) => Some(g),
+        _ => None,
+    });
+    blur.unwrap().prop_mut("blurriness").unwrap().expr = Some(effectcraft_project::Expression { text: "time * 4".into(), enabled: true });
+}
+
+fn layer_cached(p: &Project, cid: ItemId, index: usize) -> bool {
+    let c = p.comp(cid).unwrap();
+    crate::cache::layer_key(&crate::eval::EvalCtx::new(p, cid, c, Tick::from_seconds_f64(0.9)), &c.layers[index], 1.0, false, false).is_some()
+}
+
+const READ_OWN_LAYER_OR_PARAMS_AT_OTHER_TIMES: &[&str] = &[
+    "ec.noise.removegrain",
+    "ec.blur.camerashakedeblur",
+    "ec.color.autolevels",
+    "ec.color.autocontrast",
+    "ec.color.autocolor",
+    "ec.color.shadowhighlight",
+    "ec.distort.rollingshutterrepair",
+    "ec.distort.warpstabilizer",
+    "ec.matte.refinesoft",
+    "ec.matte.refinehard",
+    "ec.matte.rotobrush",
+    "ec.matte.objectmatte",
+    "ec.color.colorstabilizer",
+    "ec.key.ccsimplewireremoval",
+    "ec.paint.paint",
+    "ec.distort.transform",
+    "ec.generate.radiowaves",
+    "ec.generate.writeon",
+];
+
+const READ_PICKED_LAYERS_AT_OTHER_TIMES: &[(&str, &str)] =
+    &[("ec.sim.particleplayground", "layerExploder/explodeLayer"), ("ec.sim.foam", "flowMap/flowMap"), ("ec.sim.waveworld", "ground/ground")];
+
+#[test]
+fn an_effect_reading_other_times_keeps_expression_layers_out_of_the_layer_cache() {
+    let own = |id: Option<&str>| {
+        let (mut p, cid, comp) = setup();
+        let mut l = solid(&mut p, &comp, [0.5, 0.5, 0.5], 200, 100);
+        blur_with_an_expression(&mut p, &mut l);
+        if let Some(id) = id {
+            add_effect_200(&mut p, &mut l, id, &[]);
+        }
+        p.comp_mut(cid).unwrap().layers = vec![l].into();
+        layer_cached(&p, cid, 0)
+    };
+    assert!(own(None), "an expression alone keeps the layer cached");
+    let wrong: Vec<&str> = READ_OWN_LAYER_OR_PARAMS_AT_OTHER_TIMES.iter().copied().filter(|id| own(Some(id))).collect();
+    assert!(wrong.is_empty(), "these read their own layer or parameters at other times, yet the layer is cached: {wrong:?}");
+    let picked = |id: Option<(&str, &str)>| {
+        let (mut p, cid, comp) = setup();
+        let mut map = solid(&mut p, &comp, [0.5, 0.5, 0.5], 200, 100);
+        blur_with_an_expression(&mut p, &mut map);
+        let mut owner = solid(&mut p, &comp, [0.2, 0.2, 0.2], 200, 100);
+        if let Some((id, param)) = id {
+            add_effect_200(&mut p, &mut owner, id, &[(param, Value::Layer(Some(map.id.0)))]);
+        } else {
+            add_effect_200(&mut p, &mut owner, "ec.channel.blend", &[("blendWithLayer", Value::Layer(Some(map.id.0)))]);
+        }
+        p.comp_mut(cid).unwrap().layers = vec![owner, map].into();
+        layer_cached(&p, cid, 0)
+    };
+    assert!(picked(None), "a layer picked at the current time keeps the owner cached");
+    let wrong: Vec<&str> = READ_PICKED_LAYERS_AT_OTHER_TIMES.iter().copied().filter(|&e| picked(Some(e))).map(|(id, _)| id).collect();
+    assert!(wrong.is_empty(), "these read a picked layer at other times, yet the owner is cached: {wrong:?}");
+}
+
 // ------------------------------------------------------------------------------ layer cache
 
 fn render_cached(p: &Project, cid: ItemId, t: Tick, cache: Option<&crate::LayerCache>) -> crate::Image {

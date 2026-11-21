@@ -24,7 +24,7 @@ use effectcraft_project::ParamUi;
 use rayon::prelude::*;
 
 use crate::util::{Plane, gauss_plane, point_in_poly};
-use crate::{Buf, EffectCtx, EffectSpec, col, num, p, popup, slider};
+use crate::{Buf, Declared, EffectCtx, EffectSpec, TimeReach, Visual, col, num, p, popup, slider};
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct MochaShape {
@@ -197,7 +197,7 @@ pub fn specs() -> Vec<EffectSpec> {
             p("shapeData", "Shape data", Value::Str(String::new()), ParamUi::Hidden),
         ],
         render: mocha_shape,
-        gpu: false,
+        declared: Declared::Filter(Visual::CPU.time(TimeReach::Clock)),
         float: true,
     }]
 }

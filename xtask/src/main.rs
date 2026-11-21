@@ -69,6 +69,7 @@ const LAYERS: &[(&str, u8)] = &[
     ("effectcraft", 6),
     ("cli", 6),
     ("web", 6),
+    ("legacy-corpus", 6),
 ];
 
 /// Allowed same-layer edges (from, to).
@@ -589,6 +590,19 @@ fn ci() -> Result<(), String> {
     if failed.is_empty() { Ok(()) } else { Err(format!("ci failed: {}", failed.join(", "))) }
 }
 
+fn legacy_corpus(rest: &[String]) -> Result<(), String> {
+    let mut c = Command::new(env!("CARGO"));
+    c.current_dir(root()).args(["run", "-q", "-p", "effectcraft-legacy-corpus", "--"]);
+    match rest {
+        [] => {}
+        [check] if check == "--check" => {
+            c.arg("--check");
+        }
+        _ => return Err("usage: cargo xtask legacy-corpus [--check]".into()),
+    }
+    run(&mut c)
+}
+
 fn main() -> ExitCode {
     let task = std::env::args().nth(1).unwrap_or_default();
     let r = match task.as_str() {
@@ -603,6 +617,7 @@ fn main() -> ExitCode {
             if rest.iter().any(|a| a == "--affected") { affected::run(&root(), &rest) } else { ci() }
         }
         "audio-backend" => audio_backend(),
+        "legacy-corpus" => legacy_corpus(&std::env::args().skip(2).collect::<Vec<_>>()),
         "web" => web(&std::env::args().skip(2).collect::<Vec<_>>()),
         "bench" => bench::run(&root(), &std::env::args().skip(2).collect::<Vec<_>>()),
         "ico" => {
@@ -613,7 +628,7 @@ fn main() -> ExitCode {
             let rest: Vec<String> = std::env::args().skip(2).collect();
             version::run(&root(), &rest.iter().map(String::as_str).collect::<Vec<_>>())
         }
-        _ => Err("usage: cargo xtask <layers|assets|pdf-deps|lock-patches|aep-corpus [--dir DIR]|wasm|web [--dev] [--serve PORT]|ico OUT.ico IN.png…|version [set X.Y.Z]|ci [--affected [--base REV] [--dry-run]]|audio-backend|bench [--pair] [--bin CLI] [--quick] [--project F --comp C] [--compare OLD.jsonl] (--help)>".into()),
+        _ => Err("usage: cargo xtask <layers|assets|pdf-deps|lock-patches|aep-corpus [--dir DIR]|wasm|web [--dev] [--serve PORT]|ico OUT.ico IN.png…|version [set X.Y.Z]|ci [--affected [--base REV] [--dry-run]]|audio-backend|legacy-corpus [--check]|bench [--pair] [--bin CLI] [--quick] [--project F --comp C] [--compare OLD.jsonl] (--help)>".into()),
     };
     match r {
         Ok(()) => ExitCode::SUCCESS,

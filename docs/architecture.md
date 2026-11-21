@@ -232,8 +232,16 @@ collapsed 3D precomps (drawn flattened), morph targets, extruded strokes.
 A **layer cache** keeps each layer's finished pixels (source, masks and effects) keyed by a hash of
 its evaluated inputs, excluding the transform. Static and transform-only layers render once;
 editing one layer re-renders only that layer. Each Render Queue job keeps its own layer cache
-for its frames. Effects that read the clock directly are declared in
-`effects::TIME_DEPENDENT`, and a test checks every registered effect against that list.
+for its frames. Each `EffectSpec` declares its `Declared` metadata in its own registration: an
+audio effect, or a filter with its routes (CPU, or CPU and GPU), its time reach (by what the
+caches do: frame, keyed on the clock, reaching other frames, both, or reading other times the
+key can't see with expressions), the inputs it reads (its layer, or also the comp scene) and its
+cover (the layer rectangle, or its own margins). The caches, the GPU path and the project's dirty
+spans read those fields instead of id lists, though a few id rules remain (an effect reading its
+own parameters past the shutter, the Cryptomatte probe's time effects, the expression controls'
+GPU and migration paths). A test renders every effect at two times
+and fails when one that changes does not declare reading the clock, and `declared_table` pins
+every effect's declared values.
 
 The viewer's **RAM preview** (`ui-egui/src/frames.rs`) keeps finished frames keyed by comp
 content, frame, scale, 3D view / region of interest and a hash of the other render options
@@ -408,7 +416,7 @@ Preserve Transparency / blend kernels (a 3D track matte renders solo through the
 Environment Light Background layers draw their sky in a kernel (`adv_sky`, from
 `Renderer::sky_draw`) before the rest of the run, in Classic and Advanced 3D comps. Wireframe
 outlines draw on the GPU from the CPU's pixel list (`Renderer::wireframe_pixels`). GPU effects
-(`effects::GPU_EFFECTS`, 280 of them: blurs, colour correction, keying incl. Screen Color Key, mattes,
+(effects that declare `Routes::CpuAndGpu`, 280 of them: blurs, colour correction, keying incl. Screen Color Key, mattes,
 channel, stylize, distortion and warps (Warp, Bezier Warp, Smear, Reshape, Two-Point Bend, CC Page
 Turn, Flexible Bend, Organic Displacement), Cartoon, bevels, shapes, the transitions (CC light family, CC
 transitions, Block Dissolve), perspective (Radial Shadow, Cylinder Wrap / Sphere / Spotlight /

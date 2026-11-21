@@ -1198,9 +1198,10 @@ source = "git+https://github.com/storytold/craft-libs?rev=5a7a63a21dd03dd1a2bc6c
 [[package]]
 name = "craft-atomic"
 version = "0.1.0"
-source = "git+https://github.com/arnav-hiwarkar/craft-libs-plugin-beta?rev=65d231ec8e9ce924203a5cdf7a30b101c0334cb5#65d231ec8e9ce924203a5cdf7a30b101c0334cb5"
+source = "git+https://github.com/arnav-hiwarkar/craft-libs-plugin-beta?rev=a8e0243d72e46b3f211712d08d7de2e5705dd124#a8e0243d72e46b3f211712d08d7de2e5705dd124"
 dependencies = [
  "exacl",
+ "log",
  "rustix 1.1.5",
  "winsafe",
 ]
@@ -1565,7 +1566,12 @@ dependencies = [
 [[package]]
 name = "craft-testkit"
 version = "0.1.0"
-source = "git+https://github.com/arnav-hiwarkar/craft-libs-plugin-beta?rev=b468730ac1975d332a275a281558a16406fe3e0c#b468730ac1975d332a275a281558a16406fe3e0c"
+source = "git+https://github.com/arnav-hiwarkar/craft-libs-plugin-beta?rev=6e4df1d034883c90af908d3833aa3be7e377a7ab#6e4df1d034883c90af908d3833aa3be7e377a7ab"
+dependencies = [
+ "serde",
+ "sha2",
+ "toml",
+]
 
 [[package]]
 name = "craft-tga"
@@ -2300,6 +2306,25 @@ dependencies = [
  "proptest",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "effectcraft-legacy-corpus"
+version = "0.24.1"
+dependencies = [
+ "craft-ecproj-format",
+ "craft-testkit",
+ "effectcraft-effects",
+ "effectcraft-engine",
+ "effectcraft-plugin",
+ "effectcraft-project",
+ "effectcraft-render",
+ "effectcraft-script",
+ "effectcraft-time",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "wat",
 ]
 
 [[package]]
@@ -7716,6 +7741,7 @@ checksum = "4f20f20e44f7e8aeb6744823ea9d869ede51e51be4fdaedede2852282e54d2d8"
 dependencies = [
  "bitflags 2.13.2",
  "indexmap",
+ "semver",
 ]
 
 [[package]]

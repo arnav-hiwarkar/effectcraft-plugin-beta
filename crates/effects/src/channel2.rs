@@ -8,10 +8,10 @@ use effectcraft_project::ParamUi;
 use rayon::prelude::*;
 
 use crate::util::{layer_or_self, lerp4, premul, unpremul};
-use crate::{Buf, EffectCtx, EffectSpec, num, p, popup, slider};
+use crate::{Buf, Declared, EffectCtx, EffectSpec, Visual, num, p, popup, slider};
 
-fn spec(id: &'static str, name: &'static str, params: Vec<crate::ParamSpec>, render: crate::RenderFn) -> EffectSpec {
-    EffectSpec { id, name, category: "Channel", params, render, gpu: false, float: true }
+fn spec(id: &'static str, name: &'static str, declared: Declared, params: Vec<crate::ParamSpec>, render: crate::RenderFn) -> EffectSpec {
+    EffectSpec { id, name, category: "Channel", params, render, declared, float: true }
 }
 
 fn pct() -> ParamUi {
@@ -295,6 +295,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.channel.blend",
             "Blend",
+            Declared::Filter(Visual::GPU),
             vec![
                 layer_param("blendWithLayer", "Blend With Layer"),
                 p("mode", "Mode", Value::Enum(0), popup(&["Crossfade", "Color Only", "Tint Only", "Darken Only", "Lighten Only"])),
@@ -306,6 +307,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.channel.calculations",
             "Calculations",
+            Declared::Filter(Visual::GPU),
             vec![
                 p("inputChannel", "Input Channel", Value::Enum(0), popup(&CHANNELS)),
                 p("invertInput", "Invert Input", Value::Bool(false), ParamUi::Checkbox),
@@ -322,6 +324,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.channel.cccomposite",
             "Source Composite",
+            Declared::Filter(Visual::GPU),
             vec![
                 p("opacity", "Opacity", num(100.0), pct()),
                 p("compositeOriginal", "Composite Original", Value::Enum(0), popup(&CC_COMPOSITE_MODES)),
@@ -332,6 +335,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.channel.compoundarithmetic",
             "Compound Arithmetic",
+            Declared::Filter(Visual::GPU),
             vec![
                 layer_param("secondSource", "Second Source Layer"),
                 p("operator", "Operator", Value::Enum(0), popup(&OPERATORS)),

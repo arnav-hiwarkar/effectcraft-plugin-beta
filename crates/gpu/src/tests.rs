@@ -919,14 +919,6 @@ fn effect_chains_and_mixed_stacks() {
 }
 
 #[test]
-fn registry_badges_match_the_gpu_implementation() {
-    for s in effectcraft_effects::registry() {
-        let implemented = crate::effects::supports(s.id);
-        assert_eq!(s.gpu, implemented, "{}: registry gpu = {}, GPU implementation = {implemented}", s.id, s.gpu);
-    }
-}
-
-#[test]
 fn quantization_preserves_cpu_levels_and_half_step_neighbors() {
     let Some(g) = gpu() else { return };
     for levels in [255.0_f32, 32768.0] {

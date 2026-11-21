@@ -130,7 +130,7 @@ pub fn effects_markdown() -> String {
     s.push_str("     Regenerate: UPDATE_DOCS=1 cargo test -p effectcraft-effects --lib effects_doc_is_current -->\n\n");
     // The parameters the table's rows list: the shown ones, not the hidden bookkeeping ones.
     let params: usize = r.iter().map(|e| e.params.iter().filter(|p| !matches!(p.ui, effectcraft_project::ParamUi::Hidden)).count()).sum();
-    let gpu = r.iter().filter(|e| e.gpu).count();
+    let gpu = r.iter().filter(|e| e.declared.runs_on_gpu()).count();
     let float = r.iter().filter(|e| e.float).count();
     let partial = r.iter().filter(|e| PARTIAL.iter().any(|(id, _)| *id == e.id)).count();
     s.push_str(&format!(
@@ -160,7 +160,7 @@ pub fn effects_markdown() -> String {
                 e.name.replace('|', "\\|"),
                 e.id,
                 e.params.iter().filter(|p| !matches!(p.ui, effectcraft_project::ParamUi::Hidden)).count(),
-                if e.gpu { "GPU" } else { "" },
+                if e.declared.runs_on_gpu() { "GPU" } else { "" },
                 if e.float { "32" } else { "" },
                 status(e.id).replace('|', "\\|"),
             ));

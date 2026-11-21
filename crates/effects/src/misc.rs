@@ -6,10 +6,17 @@ use effectcraft_project::ParamUi;
 use effectcraft_raster::{Image, gaussian_blur, gaussian_blur_unbounded_at, hash_noise};
 use rayon::prelude::*;
 
-use crate::{Buf, EffectCtx, EffectSpec, col, num, p, popup, slider};
+use crate::{Buf, Cover, Declared, EffectCtx, EffectSpec, TimeReach, Visual, col, num, p, popup, slider};
 
-fn spec(id: &'static str, name: &'static str, category: &'static str, params: Vec<crate::ParamSpec>, render: crate::RenderFn) -> EffectSpec {
-    EffectSpec { id, name, category, params, render, gpu: false, float: true }
+fn spec(
+    id: &'static str,
+    name: &'static str,
+    declared: Declared,
+    category: &'static str,
+    params: Vec<crate::ParamSpec>,
+    render: crate::RenderFn,
+) -> EffectSpec {
+    EffectSpec { id, name, category, params, render, declared, float: true }
 }
 
 /// AE's Blurriness is roughly a radius; our Gaussian uses sigma = blurriness / 2.
@@ -779,6 +786,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.blur.gaussian",
             "Gaussian Blur",
+            Declared::Filter(Visual::GPU.cover(Cover::OwnMargins)),
             "Blur & Sharpen",
             vec![
                 p("blurriness", "Blurriness", num(0.0), slider(0.0, 30000.0, 0.0, 50.0, 1)),
@@ -790,6 +798,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.blur.fastbox",
             "Fast Box Blur",
+            Declared::Filter(Visual::GPU.cover(Cover::OwnMargins)),
             "Blur & Sharpen",
             vec![
                 p("radius", "Blur Radius", num(0.0), slider(0.0, 3000.0, 0.0, 50.0, 1)),
@@ -802,6 +811,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.blur.directional",
             "Directional Blur",
+            Declared::Filter(Visual::GPU),
             "Blur & Sharpen",
             vec![p("direction", "Direction", num(0.0), ParamUi::Angle), p("length", "Blur Length", num(0.0), slider(0.0, 1000.0, 0.0, 100.0, 1))],
             directional,
@@ -809,6 +819,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.blur.radial",
             "Radial Blur",
+            Declared::Filter(Visual::GPU),
             "Blur & Sharpen",
             vec![
                 // After Effects accepts 0..1000; its slider shows 0..100 (#3467).
@@ -820,10 +831,18 @@ pub fn specs() -> Vec<EffectSpec> {
             ],
             radial,
         ),
-        spec("ec.blur.sharpen", "Sharpen", "Blur & Sharpen", vec![p("amount", "Sharpen Amount", num(0.0), slider(0.0, 4000.0, 0.0, 100.0, 0))], sharpen),
+        spec(
+            "ec.blur.sharpen",
+            "Sharpen",
+            Declared::Filter(Visual::GPU),
+            "Blur & Sharpen",
+            vec![p("amount", "Sharpen Amount", num(0.0), slider(0.0, 4000.0, 0.0, 100.0, 0))],
+            sharpen,
+        ),
         spec(
             "ec.blur.unsharp",
             "Unsharp Mask",
+            Declared::Filter(Visual::GPU),
             "Blur & Sharpen",
             vec![
                 p("amount", "Amount", num(50.0), slider(0.0, 500.0, 0.0, 500.0, 0)),
@@ -835,6 +854,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.stylize.glow",
             "Glow",
+            Declared::Filter(Visual::GPU.cover(Cover::OwnMargins)),
             "Stylize",
             vec![
                 p("based", "Glow Based On", Value::Enum(1), popup(&["Alpha Channel", "Color Channels"])),
@@ -859,6 +879,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.stylize.mosaic",
             "Mosaic",
+            Declared::Filter(Visual::GPU),
             "Stylize",
             vec![
                 p("horizontal", "Horizontal Blocks", num(10.0), slider(1.0, 4000.0, 1.0, 200.0, 0)),
@@ -867,11 +888,26 @@ pub fn specs() -> Vec<EffectSpec> {
             ],
             mosaic,
         ),
-        spec("ec.stylize.posterize", "Posterize", "Stylize", vec![p("level", "Level", num(6.0), slider(2.0, 255.0, 2.0, 32.0, 0))], posterize),
-        spec("ec.stylize.threshold", "Threshold", "Stylize", vec![p("level", "Level", num(128.0), slider(0.0, 255.0, 0.0, 255.0, 0))], threshold),
+        spec(
+            "ec.stylize.posterize",
+            "Posterize",
+            Declared::Filter(Visual::GPU),
+            "Stylize",
+            vec![p("level", "Level", num(6.0), slider(2.0, 255.0, 2.0, 32.0, 0))],
+            posterize,
+        ),
+        spec(
+            "ec.stylize.threshold",
+            "Threshold",
+            Declared::Filter(Visual::GPU),
+            "Stylize",
+            vec![p("level", "Level", num(128.0), slider(0.0, 255.0, 0.0, 255.0, 0))],
+            threshold,
+        ),
         spec(
             "ec.stylize.findedges",
             "Find Edges",
+            Declared::Filter(Visual::GPU),
             "Stylize",
             vec![p("invert", "Invert", Value::Bool(false), ParamUi::Checkbox), p("blend", "Blend With Original", num(0.0), slider(0.0, 100.0, 0.0, 100.0, 0))],
             find_edges,
@@ -879,6 +915,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.stylize.emboss",
             "Emboss",
+            Declared::Filter(Visual::GPU),
             "Stylize",
             vec![
                 p("direction", "Direction", num(45.0), ParamUi::Angle),
@@ -891,6 +928,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.perspective.dropshadow",
             "Drop Shadow",
+            Declared::Filter(Visual::GPU.cover(Cover::OwnMargins)),
             "Perspective",
             vec![
                 p("color", "Shadow Color", col(0.0, 0.0, 0.0), ParamUi::Color),
@@ -905,6 +943,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.channel.invert",
             "Invert",
+            Declared::Filter(Visual::GPU),
             "Channel",
             vec![
                 p("channel", "Channel", Value::Enum(0), popup(&INVERT_CHANNELS)),
@@ -915,6 +954,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.noise.noise",
             "Noise",
+            Declared::Filter(Visual::GPU.time(TimeReach::Clock)),
             "Noise & Grain",
             vec![
                 p("amount", "Amount of Noise", num(0.0), slider(0.0, 100.0, 0.0, 100.0, 1)),
@@ -926,6 +966,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.transition.linearwipe",
             "Linear Wipe",
+            Declared::Filter(Visual::GPU),
             "Transition",
             vec![
                 p("completion", "Transition Completion", num(0.0), slider(0.0, 100.0, 0.0, 100.0, 0)),
@@ -939,6 +980,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.transition.radialwipe",
             "Radial Wipe",
+            Declared::Filter(Visual::GPU),
             "Transition",
             vec![
                 p("completion", "Transition Completion", num(0.0), slider(0.0, 100.0, 0.0, 100.0, 0)),
@@ -952,6 +994,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.transition.venetian",
             "Venetian Blinds",
+            Declared::Filter(Visual::GPU),
             "Transition",
             vec![
                 p("completion", "Transition Completion", num(0.0), slider(0.0, 100.0, 0.0, 100.0, 0)),

@@ -72,7 +72,7 @@ pub fn push_recent(recent: &mut Vec<String>, id: &str) {
 pub fn depth_keeps(depth: &str, e: &effectcraft_engine::effects::EffectSpec) -> bool {
     match depth {
         "32" => e.float,
-        "gpu" => e.gpu,
+        "gpu" => e.declared.runs_on_gpu(),
         _ => true,
     }
 }

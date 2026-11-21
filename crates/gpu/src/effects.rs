@@ -8,10 +8,8 @@ use effectcraft_render::FxStep;
 use crate::context::{Enc, GpuImage, Params};
 use crate::ops;
 
-/// Effects with a GPU implementation (must equal `effectcraft_effects::GPU_EFFECTS`), plus the
-/// expression controls (pass-throughs).
 pub fn supports(id: &str) -> bool {
-    effectcraft_effects::GPU_EFFECTS.contains(&id) || id.starts_with("ec.control.")
+    effectcraft_effects::declared(id).is_some_and(|d| d.runs_on_gpu())
 }
 
 /// A layer buffer on the GPU (see [`Buf`]).

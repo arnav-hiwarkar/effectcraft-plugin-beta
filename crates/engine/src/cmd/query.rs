@@ -185,7 +185,7 @@ fn capabilities(s: &mut Session, _: &Value) -> Result<Value> {
     Ok(json!({
         "version": env!("CARGO_PKG_VERSION"),
         "commands": super::command_specs().len(),
-        "effects": {"total": fx.len(), "gpu": fx.iter().filter(|e| e.gpu).count(), "float": fx.iter().filter(|e| e.float).count()},
+        "effects": {"total": fx.len(), "gpu": fx.iter().filter(|e| e.declared.runs_on_gpu()).count(), "float": fx.iter().filter(|e| e.float).count()},
         "export": formats,
         "import": s.importer.is_some(),
         "expressions": s.expr.is_some(),

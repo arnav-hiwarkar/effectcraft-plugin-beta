@@ -1050,7 +1050,7 @@ fn each_comp_keeps_its_resolution_outside_the_undo_history_and_in_the_file() {
     // No undo step, but the project is modified (it's saved with it).
     assert_eq!(s.history.undo.len(), steps);
     assert!(s.is_dirty());
-    assert!(s.active_comp().unwrap().same_pixels(&pixels));
+    assert!(s.active_comp().unwrap().same_pixels(&pixels, effectcraft_effects::declared));
     // Another comp has its own; switching back shows comp A's again.
     s.execute("comp.new", json!({"name": "B", "width": 320, "height": 180, "frameRate": 30, "duration": 5})).unwrap();
     let b = s.active_comp_id().unwrap();

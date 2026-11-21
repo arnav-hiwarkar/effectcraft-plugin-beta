@@ -24,10 +24,10 @@ use std::f64::consts::PI;
 use effectcraft_keyframe::Value;
 use effectcraft_project::ParamUi;
 
-use crate::{Buf, EffectCtx, EffectSpec, Params, num, p, popup, slider};
+use crate::{Buf, Declared, EffectCtx, EffectSpec, Params, num, p, popup, slider};
 
 fn spec(id: &'static str, name: &'static str, params: Vec<crate::ParamSpec>) -> EffectSpec {
-    EffectSpec { id, name, category: "Audio", params, render: passthrough, gpu: false, float: true }
+    EffectSpec { id, name, category: "Audio", params, render: passthrough, declared: Declared::Audio, float: true }
 }
 
 fn passthrough(_: &EffectCtx, b: Buf) -> Buf {
@@ -189,11 +189,6 @@ pub fn specs() -> Vec<EffectSpec> {
             ],
         ),
     ]
-}
-
-/// Is `id` an audio effect (applied by the mixdown rather than the compositor)?
-pub fn is_audio_effect(id: &str) -> bool {
-    effectcraft_project::is_audio_effect(id)
 }
 
 /// Does the effect produce sound on its own (so a layer without audio becomes audible)?
@@ -785,7 +780,7 @@ mod tests {
         ] {
             let s = crate::find(id).unwrap_or_else(|| panic!("{id}"));
             assert_eq!(s.category, "Audio");
-            assert!(is_audio_effect(id));
+            assert_eq!(s.declared, crate::Declared::Audio);
         }
     }
 

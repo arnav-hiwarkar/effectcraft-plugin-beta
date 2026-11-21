@@ -5,6 +5,7 @@ use super::pixels::{
 use super::shatter::{CD_PROPS, CD_SOURCES, SHATTER_PATTERNS, SHATTER_TEXTURE_MODES, card_dance, shatter};
 use super::surfaces::{caustics, wave_world};
 use super::{EffectSpec, ParamUi, Value, col, num, p, pct, popup, pt, slider, spec};
+use crate::{Declared, EffectInputs, TimeReach, Visual};
 
 // ------------------------------------------------------------------ specs
 
@@ -82,6 +83,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.sim.ccballaction",
             "Ball Grid",
+            Declared::Filter(Visual::GPU.time(TimeReach::ClockAndOtherFrames)),
             // After Effects' order and defaults since 24.2 (#3197). Scatter Motion is treated as
             // the renamed Instability State (an assumption, `migrate::PARAM_ID_ALIASES`). The
             // Shading range is not published; -100..100 is an assumption.
@@ -104,6 +106,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.sim.ccpixelpolly",
             "Pixel Shatter",
+            Declared::Filter(Visual::GPU.time(TimeReach::ClockAndOtherFrames)),
             vec![
                 p("force", "Force", num(100.0), slider(-1000.0, 1000.0, -300.0, 300.0, 1)),
                 p("gravity", "Gravity", num(1.0), slider(-20.0, 20.0, -5.0, 5.0, 2)),
@@ -121,6 +124,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.sim.ccscatterize",
             "Pixel Scatter",
+            Declared::Filter(Visual::GPU.time(TimeReach::ClockAndOtherFrames)),
             vec![
                 p("scatter", "Scatter", num(0.0), slider(0.0, 1000.0, 0.0, 200.0, 1)),
                 p("rightTwist", "Right Twist", num(0.0), ParamUi::Angle),
@@ -129,10 +133,17 @@ pub fn specs() -> Vec<EffectSpec> {
             ],
             scatterize,
         ),
-        spec("ec.sim.carddance", "Card Dance", card_dance_params(), card_dance),
+        spec(
+            "ec.sim.carddance",
+            "Card Dance",
+            Declared::Filter(Visual::GPU.time(TimeReach::ClockAndOtherFrames).inputs(EffectInputs::CompScene)),
+            card_dance_params(),
+            card_dance,
+        ),
         spec(
             "ec.sim.caustics",
             "Caustics",
+            Declared::Filter(Visual::GPU.time(TimeReach::ClockAndOtherFrames).inputs(EffectInputs::CompScene)),
             vec![
                 p("bottom/bottom", "Bottom", Value::Layer(None), ParamUi::Layer),
                 p("bottom/scaling", "Scaling", num(1.0), slider(0.01, 10.0, 0.1, 3.0, 3)),
@@ -168,6 +179,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.sim.waveworld",
             "Wave World",
+            Declared::Filter(Visual::GPU.time(TimeReach::OtherTimesUnkeyed)),
             {
                 let mut v = vec![
                     p("view", "View", Value::Enum(0), popup(&["Wireframe Preview", "Height Map"])),
@@ -199,6 +211,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.sim.shatter",
             "Shatter",
+            Declared::Filter(Visual::GPU.time(TimeReach::ClockAndOtherFrames).inputs(EffectInputs::CompScene)),
             vec![
                 p(
                     "view",
@@ -253,6 +266,7 @@ pub fn specs() -> Vec<EffectSpec> {
         spec(
             "ec.sim.foam",
             "Foam",
+            Declared::Filter(Visual::GPU.time(TimeReach::OtherTimesUnkeyed)),
             vec![
                 p("view", "View", Value::Enum(0), popup(&["Draft", "Draft + Flow Map", "Rendered"])),
                 p("producer/producerPoint", "Producer Point", pt(0.5, 0.5), ParamUi::Point),
