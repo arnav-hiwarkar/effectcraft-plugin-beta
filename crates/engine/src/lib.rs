@@ -87,6 +87,7 @@ pub use system::storage;
 pub use system::sysinfo;
 
 mod doc_state;
+pub mod engine_ids;
 mod error;
 mod event;
 mod fonts;
@@ -99,7 +100,7 @@ pub use error::{EngineError, Result};
 pub use event::Event;
 pub use fonts::{FontRow, font_features, font_menu, font_preview, font_styles, text_families};
 pub use services::{FsServices, Importer, Services};
-pub use session::upgrade_effects;
+pub use session::{Upgraded, upgrade_effects};
 
 pub struct Session {
     pub project: Arc<Project>,

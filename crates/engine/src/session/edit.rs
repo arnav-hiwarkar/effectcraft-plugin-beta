@@ -223,7 +223,8 @@ impl Session {
         self.drop_tasks();
         self.script_ui.project_epoch = self.script_ui.project_epoch.wrapping_add(1);
         p.fix_next_id();
-        let lost = upgrade_effects(&mut p);
+        let upgraded = upgrade_effects(&mut p);
+        let lost = &upgraded.static_channels;
         // Let go of what the closed project's footage and proxies decoded (frames, decoders,
         // models), and of what the new project's files decoded under an earlier project: the
         // media layer keys them by path, and the files may have changed since (#1070).
@@ -247,6 +248,10 @@ impl Session {
             log::warn!("channel selection is static: keyframes or expressions dropped on {}", lost.join("; "));
             self.toast(format!("Channel selection can't be animated: kept the first value of {}", lost.join(", ")));
         }
+        if let Some(text) = upgraded.unresolved_text() {
+            log::warn!("effects {text}");
+            self.toast(format!("Effects {text}"));
+        }
         // The viewers' RAM preview shows the closed project's frames, whose comp ids can collide
         // with the new project's.
         self.events.push(Event::PurgeCaches);
@@ -265,10 +270,11 @@ impl Session {
 /// properties added since ([`effectcraft_project::build::upgrade_shape_contents`]). Stamps the
 /// current schema. Channel-selection parameters are made static
 /// ([`effectcraft_effects::migrate::static_channel_params`]); returns what lost its animation
-/// (`Layer: Effect: Parameter`).
-#[must_use = "what lost its animation is reported to the user"]
-pub fn upgrade_effects(p: &mut Project) -> Vec<String> {
+/// (`Layer: Effect: Parameter`) and the effect ids `engine.lock` could not resolve.
+#[must_use = "what lost its animation and the effects this version does not know are reported to the user"]
+pub fn upgrade_effects(p: &mut Project) -> Upgraded {
     let mut lost = vec![];
+    let mut unresolved = vec![];
     let to_effect_space = p.schema < effectcraft_project::SCHEMA_EFFECT_SPACE;
     // Effect bounds per layer: (size, top-left in layer coordinates).
     let mut bounds = std::collections::HashMap::new();
@@ -296,6 +302,9 @@ pub fn upgrade_effects(p: &mut Project) -> Vec<String> {
             let Some(fx) = l.props.sub_mut("effects") else { continue };
             for n in &mut fx.children {
                 let effectcraft_project::Node::Group(g) = n else { continue };
+                if let Err(why) = crate::engine_ids::resolve_effect(crate::engine_ids::Site::ProjectEffect, g) {
+                    unresolved.push(why);
+                }
                 let effectcraft_project::GroupKind::Effect { effect } = &g.kind else { continue };
                 if let Some(spec) = effectcraft_effects::find(effect) {
                     effectcraft_effects::migrate::upgrade_instance(spec, g, &mut effectcraft_project::build::Ids(&mut next), size);
@@ -311,5 +320,17 @@ pub fn upgrade_effects(p: &mut Project) -> Vec<String> {
     }
     p.next_id = next;
     p.schema = effectcraft_project::SCHEMA_VERSION;
-    lost
+    Upgraded { static_channels: lost, unresolved }
+}
+
+pub struct Upgraded {
+    pub static_channels: Vec<String>,
+    pub unresolved: Vec<crate::engine_ids::Unresolved>,
+}
+
+impl Upgraded {
+    pub fn unresolved_text(&self) -> Option<String> {
+        let ids: Vec<String> = self.unresolved.iter().map(ToString::to_string).collect();
+        (!ids.is_empty()).then(|| format!("kept as saved, without rendering: {}", ids.join("; ")))
+    }
 }

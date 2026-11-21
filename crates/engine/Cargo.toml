@@ -16,6 +16,7 @@ effectcraft-geom = { workspace = true }
 effectcraft-color = { workspace = true }
 effectcraft-keyframe = { workspace = true }
 effectcraft-project = { workspace = true }
+craft-idmap = { workspace = true }
 effectcraft-raster = { workspace = true }
 effectcraft-path = { workspace = true }
 effectcraft-text = { workspace = true }

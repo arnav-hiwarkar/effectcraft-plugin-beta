@@ -10,4 +10,4 @@ mod dispatch;
 mod edit;
 mod render;
 
-pub use edit::upgrade_effects;
+pub use edit::{Upgraded, upgrade_effects};
