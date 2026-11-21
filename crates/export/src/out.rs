@@ -12,34 +12,43 @@ use crate::{ExportError, Result, io};
 pub type Sink = dyn Fn(&str, Vec<u8>) + Send + Sync;
 
 pub(crate) enum Out<'a> {
-    File { w: Box<BufWriter<craft_atomic::Stage<'static>>>, path: String, fresh: bool, outputs: &'a Outputs },
+    File { w: Box<BufWriter<craft_atomic::Stage<'a>>>, path: String, outputs: &'a Outputs<'a> },
     Mem { path: String, cur: Cursor<Vec<u8>>, sink: &'a Sink },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct UnconfirmedOutput {
     pub path: String,
-    pub reason: craft_atomic::Reason,
+    pub reasons: craft_atomic::Reasons,
 }
 
-#[derive(Default)]
-pub(crate) struct Outputs {
+pub(crate) struct Outputs<'a> {
+    pub(crate) fs: &'a dyn craft_atomic::AtomicFs,
     owned: Mutex<Vec<(PathBuf, craft_atomic::Identity)>>,
+    replaced: Mutex<Vec<String>>,
     unconfirmed: Mutex<Vec<UnconfirmedOutput>>,
 }
 
-impl Outputs {
+impl<'a> Outputs<'a> {
+    pub(crate) fn new(fs: &'a dyn craft_atomic::AtomicFs) -> Self {
+        Self { fs, owned: Mutex::default(), replaced: Mutex::default(), unconfirmed: Mutex::default() }
+    }
+
     pub(crate) fn unconfirmed(&self) -> Vec<UnconfirmedOutput> {
         self.unconfirmed.lock().unwrap_or_else(PoisonError::into_inner).clone()
+    }
+
+    pub(crate) fn replaced(&self) -> Vec<String> {
+        self.replaced.lock().unwrap_or_else(PoisonError::into_inner).clone()
     }
 
     pub(crate) fn remove_owned(&self) -> Result<()> {
         let mut failure = None;
         for (path, identity) in self.owned.lock().unwrap_or_else(PoisonError::into_inner).iter() {
-            if craft_atomic::Identity::at(path).ok() != Some(*identity) {
+            if self.fs.entry(path).ok().map(|e| e.identity) != Some(*identity) {
                 continue;
             }
-            if let Err(e) = std::fs::remove_file(path)
+            if let Err(e) = self.fs.remove(path)
                 && e.kind() != std::io::ErrorKind::NotFound
             {
                 failure.get_or_insert_with(|| ExportError::Io(format!("cannot remove cancelled output {}: {e}", path.display())));
@@ -49,7 +58,7 @@ impl Outputs {
     }
 }
 
-pub(crate) fn create<'a>(sink: Option<&'a Sink>, outputs: &'a Outputs, path: &str) -> Result<Out<'a>> {
+pub(crate) fn create<'a>(sink: Option<&'a Sink>, outputs: &'a Outputs<'a>, path: &str) -> Result<Out<'a>> {
     match sink {
         Some(sink) => Ok(Out::Mem { path: path.to_string(), cur: Cursor::new(Vec::new()), sink }),
         None => {
@@ -57,9 +66,8 @@ pub(crate) fn create<'a>(sink: Option<&'a Sink>, outputs: &'a Outputs, path: &st
             if let Some(dir) = file.parent().filter(|d| !d.as_os_str().is_empty()) {
                 std::fs::create_dir_all(dir).map_err(io)?;
             }
-            let fresh = std::fs::symlink_metadata(file).is_err();
-            let stage = craft_atomic::WriteOptions::default().stage(file).map_err(io)?;
-            Ok(Out::File { w: Box::new(BufWriter::new(stage)), path: path.to_string(), fresh, outputs })
+            let stage = craft_atomic::WriteOptions::default().with_fs(outputs.fs).stage(file).map_err(io)?;
+            Ok(Out::File { w: Box::new(BufWriter::new(stage)), path: path.to_string(), outputs })
         }
     }
 }
@@ -71,18 +79,17 @@ pub(crate) fn exists(sink: Option<&Sink>, path: &str) -> bool {
 impl Out<'_> {
     pub(crate) fn finish(self) -> Result<u64> {
         match self {
-            Out::File { w, path, fresh, outputs } => {
+            Out::File { w, path, outputs } => {
                 let mut stage = (*w).into_inner().map_err(|e| ExportError::Io(e.to_string()))?;
-                let bytes = stage.file().metadata().map(|m| m.len()).map_err(io)?;
-                match stage.publish() {
-                    craft_atomic::Receipt::Durable => {}
-                    craft_atomic::Receipt::VisibleUnconfirmed(u) => {
-                        outputs.unconfirmed.lock().unwrap_or_else(PoisonError::into_inner).push(UnconfirmedOutput { path: path.clone(), reason: u.reason });
-                    }
-                    craft_atomic::Receipt::Unchanged(error) | craft_atomic::Receipt::Displaced { error, .. } => return Err(io(error)),
+                let bytes = stage.seek(SeekFrom::End(0)).map_err(io)?;
+                let replaces = stage.replaces();
+                if let Some(reasons) = stage.publish().published().map_err(io)? {
+                    outputs.unconfirmed.lock().unwrap_or_else(PoisonError::into_inner).push(UnconfirmedOutput { path: path.clone(), reasons });
                 }
-                if fresh && let Ok(identity) = craft_atomic::Identity::at(Path::new(&path)) {
-                    outputs.owned.lock().unwrap_or_else(PoisonError::into_inner).push((PathBuf::from(path), identity));
+                if replaces {
+                    outputs.replaced.lock().unwrap_or_else(PoisonError::into_inner).push(path);
+                } else if let Ok(entry) = outputs.fs.entry(Path::new(&path)) {
+                    outputs.owned.lock().unwrap_or_else(PoisonError::into_inner).push((PathBuf::from(path), entry.identity));
                 }
                 Ok(bytes)
             }

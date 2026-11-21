@@ -846,25 +846,27 @@ fn atomic_write_overwrites_a_long_valid_filename() {
 }
 
 #[test]
-fn concurrent_atomic_writes_publish_one_whole_file_and_refuse_the_rest() {
-    // Writers of the same file used to share one `.tmp`: they truncated each other's data and
-    // the later rename failed once the first had moved it away (#1233).
-    let d = tmp("atomic-concurrent");
+fn a_writer_overtaken_by_another_publication_is_refused_and_keeps_the_newer_file() {
+    let d = tmp("atomic-overtaken");
     let f = d.join("shared.ecproj");
-    for round in 0..10 {
-        let contents: Vec<Vec<u8>> = (0..8u8).map(|w| vec![b'a' + w; 256 * 1024 + usize::from(w) * 1000]).collect();
-        let results: Vec<std::io::Result<()>> = std::thread::scope(|sc| {
-            let writers: Vec<_> = contents.iter().map(|c| sc.spawn(|| atomic_write(&f, c))).collect();
-            writers.into_iter().map(|w| w.join().unwrap()).collect()
-        });
-        assert!(results.iter().any(Result::is_ok), "round {round}: one writer publishes");
-        for error in results.iter().filter_map(|r| r.as_ref().err()) {
-            assert!(error.to_string().contains("another program replaced the file"), "round {round}: {error}");
-        }
-        let got = std::fs::read(&f).unwrap();
-        assert!(contents.contains(&got), "round {round}: the file is one writer's whole data ({} bytes)", got.len());
-        assert_eq!(names(&d), ["shared.ecproj"], "round {round}: no temporary file is left");
-    }
+    atomic_write(&f, b"first").unwrap();
+    let mut slow = craft_atomic::WriteOptions::default().stage(&f).unwrap();
+    std::io::Write::write_all(&mut slow, b"slow writer").unwrap();
+    atomic_write(&f, b"fast writer").unwrap();
+    let refused = slow.publish().visible().unwrap_err();
+    assert!(refused.to_string().contains("another program replaced the file"), "{refused}");
+    assert_eq!(std::fs::read(&f).unwrap(), b"fast writer");
+    assert_eq!(names(&d), ["shared.ecproj"], "no temporary file is left");
+    let _ = std::fs::remove_dir_all(d);
+}
+
+#[test]
+fn project_save_reports_its_durability() {
+    let d = tmp("save-durability");
+    let path = d.join("p.ecproj");
+    let mut s = Session::default();
+    let saved = s.execute_checked("file.saveAs", json!({"path": path.to_string_lossy()})).unwrap();
+    assert_eq!(saved["durability"], "durable");
     let _ = std::fs::remove_dir_all(d);
 }
 

@@ -67,6 +67,8 @@ pub enum ExportError {
     Encode(String),
     #[error("{0}")]
     Unsupported(String),
+    #[error("{error}; it had already replaced these existing files: {}", replaced.join(", "))]
+    Replaced { error: Box<ExportError>, replaced: Vec<String> },
 }
 
 pub type Result<T> = std::result::Result<T, ExportError>;
@@ -132,6 +134,7 @@ pub struct JobOptions<'a> {
     /// in the memory accountant's common budget, so together with the other caches they stay
     /// within it. `None`: [`CACHE_BUDGET`].
     pub cache_budget: Option<usize>,
+    pub fs: Option<&'a dyn craft_atomic::AtomicFs>,
 }
 
 /// The layer caches of a Render Queue run (see [`JobOptions::caches`]): one per compositor,
@@ -226,9 +229,11 @@ pub async fn export_async(job: &Job<'_>, progress: &mut dyn FnMut(&Progress) -> 
     let render = RenderEnd(job.accel.filter(|_| job.options.caches.is_none()));
     let mut r = export_with(&cx, progress, t0).await;
     drop(render);
+    let replaced = cx.outputs.replaced();
+    let with_replaced = |error| if replaced.is_empty() { error } else { ExportError::Replaced { error: Box::new(error), replaced: replaced.clone() } };
     if matches!(r, Err(ExportError::Cancelled)) {
         cx.remove_cancelled_outputs()?;
-        return r;
+        return Err(with_replaced(ExportError::Cancelled));
     }
     let log = cx.write_log(&r, t0.elapsed().as_secs_f64());
     if let Ok(rep) = &mut r {
@@ -236,7 +241,7 @@ pub async fn export_async(job: &Job<'_>, progress: &mut dyn FnMut(&Progress) -> 
         rep.overflow = cx.overflowed.lock().unwrap_or_else(|e| e.into_inner()).clone();
         rep.unconfirmed = cx.outputs.unconfirmed();
     }
-    r
+    r.map_err(with_replaced)
 }
 
 /// Calls [`effectcraft_render::Accelerator::render_end`] when dropped: after the export, and

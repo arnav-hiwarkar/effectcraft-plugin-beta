@@ -272,7 +272,7 @@ pub(crate) struct Cx<'a> {
     pub frame_times: Option<Mutex<Vec<(u64, f64)>>>,
     /// Files written to an overflow folder.
     pub overflowed: Mutex<Vec<String>>,
-    pub(crate) outputs: out::Outputs,
+    pub(crate) outputs: out::Outputs<'a>,
 }
 
 /// A job's layer caches: its own, or those of the Render Queue run it belongs to.
@@ -365,7 +365,7 @@ impl<'a> Cx<'a> {
             cpu_frames: Mutex::new(None),
             frame_times,
             overflowed: Mutex::new(vec![]),
-            outputs: out::Outputs::default(),
+            outputs: out::Outputs::new(job.options.fs.unwrap_or(&craft_atomic::RealFs)),
         };
         if let Some(c) = cx.fixed_choice(std::env::var(RENDERER_ENV).ok().as_deref()) {
             cx.decide(c);

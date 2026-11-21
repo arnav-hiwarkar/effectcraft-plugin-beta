@@ -70,6 +70,7 @@ impl Exporter for FileExporter {
                     gpu_frames: job.gpu_frames,
                     free_memory: Some(&free_memory),
                     cache_budget: job.cache_budget,
+                    fs: None,
                 },
                 nested_switches: job.nested_switches,
             };
@@ -84,7 +85,7 @@ impl Exporter for FileExporter {
                     audio: r.audio,
                     log: r.log,
                     overflow: r.overflow,
-                    unconfirmed: r.unconfirmed.into_iter().map(|u| effectcraft_engine::UnconfirmedFile { path: u.path, reason: u.reason.id() }).collect(),
+                    unconfirmed: r.unconfirmed.into_iter().map(|u| effectcraft_engine::UnconfirmedFile { path: u.path, reasons: u.reasons.ids() }).collect(),
                 }),
                 Err(effectcraft_export::ExportError::Cancelled) => Err(effectcraft_engine::render_queue::CANCELLED.into()),
                 Err(e) => Err(e.to_string()),

@@ -12,7 +12,7 @@ repository = "https://github.com/storytold/effectcraft"
 
 [workspace.dependencies]
 craft-testkit = { git = "https://github.com/arnav-hiwarkar/craft-libs-plugin-beta", rev = "6e4df1d034883c90af908d3833aa3be7e377a7ab" }
-craft-atomic = { git = "https://github.com/arnav-hiwarkar/craft-libs-plugin-beta", rev = "a8e0243d72e46b3f211712d08d7de2e5705dd124" }
+craft-atomic = { git = "https://github.com/arnav-hiwarkar/craft-libs-plugin-beta", rev = "5630535f065e6d91c31ba45197927614c1c45b62" }
 craft-timeline = { git = "https://github.com/storytold/craft-libs", rev = "0d6dd8bed815b8366869a800d2bf22588ca62dcb", default-features = false }
 craft-mime = { version = "0.1.0", git = "https://github.com/storytold/craft-libs", rev = "5a7a63a21dd03dd1a2bc6c308a3a6ce818caae87" }
 craft-pdf = { git = "https://github.com/storytold/craft-libs", rev = "808730f49b9637b7909fe2ae56f9d63fdb100cae", version = "=0.1.0", default-features = false, features = ["read"] }

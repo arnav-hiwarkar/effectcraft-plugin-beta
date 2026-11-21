@@ -94,12 +94,15 @@ pub(crate) fn file_text(s: &Session, path: &str) -> Result<String> {
 
 fn save_to(s: &mut Session, path: &str) -> Result<Value> {
     let json = file_text(s, path)?;
-    s.services.write_file(path, json.as_bytes()).map_err(|e| EngineError::Other(format!("cannot write {path}: {e}")))?;
+    let durability = s.services.write_file_durability(path, json.as_bytes()).map_err(|e| EngineError::Other(format!("cannot write {path}: {e}")))?;
     s.path = Some(path.to_string());
     s.mark_saved();
     s.note_project_path(path);
-    s.toast(format!("Saved {path}"));
-    Ok(json!({"path": path, "bytes": json.len()}))
+    match durability {
+        crate::services::Durability::Unconfirmed(reasons) => s.toast(format!("Saved {path}, not confirmed durable ({reasons})")),
+        crate::services::Durability::Durable | crate::services::Durability::NotMeasured => s.toast(format!("Saved {path}")),
+    }
+    Ok(json!({"path": path, "bytes": json.len(), "durability": durability.id()}))
 }
 
 fn save(s: &mut Session, p: &Value) -> Result<Value> {
