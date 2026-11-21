@@ -10,8 +10,9 @@ use effectcraft_engine::config::DirConfig;
 use effectcraft_legacy_corpus::{GAIN_ID, NEIGHBOUR_PROBE_ID, NEIGHBOURS_ID, PARAMS_PROBE_ID};
 use effectcraft_project::{GroupKind, ItemId, Node, Project};
 
-pub fn corpus() -> Committed {
-    craft_testkit::corpus::open(&effectcraft_legacy_corpus::root()).unwrap()
+pub fn corpus() -> &'static Committed {
+    static CORPUS: std::sync::OnceLock<Committed> = std::sync::OnceLock::new();
+    CORPUS.get_or_init(|| craft_testkit::corpus::open(&effectcraft_legacy_corpus::root()).unwrap())
 }
 
 pub fn loaded() {

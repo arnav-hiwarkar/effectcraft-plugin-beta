@@ -46,6 +46,7 @@ fn check(kind: LegacyPath) {
 fn every_legacy_path_passes_its_parity_test() {
     let failed: Vec<&str> = LegacyPath::ALL.into_iter().filter(|kind| std::panic::catch_unwind(|| check(*kind)).is_err()).map(LegacyPath::name).collect();
     assert_eq!(failed, Vec::<&str>::new());
+    assert_eq!(corpus().unread(), Vec::<String>::new(), "every committed member is read by a parity test");
 }
 
 fn thousandth(v: f32) -> i32 {
